@@ -154,7 +154,7 @@ pub const FileSystem = struct {
         const server_config = fmt(allocator, "fs_server_{s}", .{system.fs.name});
         try data.serialize(allocator, system.server_config, prefix, server_config);
 
-        const client_config = fmt(allocator, "fs_client_{s}", .{system.client.name});
+        const client_config = fmt(allocator, "fs_client_{s}{s}", .{system.client.name, system.fs.name});
         try data.serialize(allocator, system.client_config, prefix, client_config);
     }
 
