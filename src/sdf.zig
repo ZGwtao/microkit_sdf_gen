@@ -602,7 +602,9 @@ pub const SystemDescription = struct {
             // specify the ID for the root PD to use when referring to this child PD.
 
             if (pd.template) |template| {
-                try std.fmt.format(writer, "{s}<protection_domain template=\"{}\" name=\"{s}\"", .{ separator, template, pd.name });
+                if (template) {
+                    try std.fmt.format(writer, "{s}<template name=\"{s}\"", .{ separator, pd.name });
+                }
             } else {
                 try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
             }
@@ -668,7 +670,13 @@ pub const SystemDescription = struct {
                 try setvar.render(writer, child_separator);
             }
 
-            try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});
+            if (pd.template) |template| {
+                if (template) {
+                    try std.fmt.format(writer, "{s}</template>\n", .{separator});
+                }
+            } else {
+                try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});
+            }
         }
     };
 
