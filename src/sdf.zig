@@ -423,6 +423,10 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
+        /// template feature
+        template: ?bool,
+        /// late_loading feature
+        late_ld: ?bool,
 
         setvars: ArrayList(SetVar),
 
@@ -441,6 +445,8 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
+            template: ?bool = null,
+            late_ld: ?bool = null,
         };
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
@@ -464,6 +470,8 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .template = options.template,
+                .late_ld = options.late_ld,
             };
         }
 
@@ -593,7 +601,11 @@ pub const SystemDescription = struct {
             // If we are given an ID, this PD is in fact a child PD and we have to
             // specify the ID for the root PD to use when referring to this child PD.
 
-            try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
+            if (pd.template) |template| {
+                try std.fmt.format(writer, "{s}<protection_domain template=\"{}\" name=\"{s}\"", .{ separator, template, pd.name });
+            } else {
+                try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
+            }
 
             if (id) |id_val| {
                 try std.fmt.format(writer, " id=\"{}\"", .{id_val});

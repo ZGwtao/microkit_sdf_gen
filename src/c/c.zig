@@ -123,7 +123,12 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
 
 export fn sdfgen_pd_create(name: [*c]u8, program_image: [*c]u8) *anyopaque {
     const pd = allocator.create(Pd) catch @panic("OOM");
-    pd.* = Pd.create(allocator, std.mem.span(name), std.mem.span(program_image), .{});
+
+    const name_slice = std.mem.span(name);
+    const program_image_slice: ?[]const u8 =
+        if (program_image != null) std.mem.span(program_image) else null;
+
+    pd.* = Pd.create(allocator, name_slice, program_image_slice, .{});
 
     return pd;
 }
@@ -193,6 +198,11 @@ export fn sdfgen_pd_set_cpu(c_pd: *align(8) anyopaque, cpu: u8) void {
 export fn sdfgen_pd_set_passive(c_pd: *align(8) anyopaque, passive: bool) void {
     const pd: *Pd = @ptrCast(c_pd);
     pd.passive = passive;
+}
+
+export fn sdfgen_pd_set_template(c_pd: *align(8) anyopaque, template: bool) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    pd.template = template;
 }
 
 export fn sdfgen_pd_set_virtual_machine(c_pd: *align(8) anyopaque, c_vm: *align(8) anyopaque) bool {
@@ -329,24 +339,34 @@ export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     allocator.destroy(mr);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool) ?*anyopaque {
+export fn sdfgen_map_create(
+    c_mr: *align(8) anyopaque,
+    vaddr: u64,
+    c_perms: bindings.sdfgen_map_perms_t,
+    cached: bool,
+    name: [*c]u8,
+    size: u64,
+) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
-    if (c_perms & 0b001 != 0) {
-        perms.read = true;
-    }
-    if (c_perms & 0b010 != 0) {
-        perms.write = true;
-    }
-    if (c_perms & 0b100 != 0) {
-        perms.execute = true;
-    }
+    if (c_perms & 0b001 != 0) perms.read = true;
+    if (c_perms & 0b010 != 0) perms.write = true;
+    if (c_perms & 0b100 != 0) perms.execute = true;
 
     const map = allocator.create(Map) catch @panic("OOM");
-    // TODO: I think we got some memory problems if we're dereferencing this stuff since
-    // we need MemoryRegion to still be valid the whole time since we depend on it
-    map.* = Map.create(mr.*, vaddr, perms, .{ .cached = cached });
+
+    if (size == 0) {
+        map.* = Map.create(mr.*, vaddr, perms, .{ .cached = cached });
+    } else {
+        const name_slice: ?[]const u8 =
+            if (name) |n| std.mem.span(n) else null;
+
+        map.* = Map.create(mr.*, vaddr, perms, .{
+            .cached = cached,
+            .setvar_vaddr = name_slice,
+        });
+    }
 
     return map;
 }

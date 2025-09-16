@@ -55,6 +55,8 @@ libsdfgen.sdfgen_pd_set_stack_size.restype = None
 libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
+libsdfgen.sdfgen_pd_set_template.restype = None
+libsdfgen.sdfgen_pd_set_template.argtypes = [c_void_p, c_uint8]
 
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
@@ -77,7 +79,7 @@ libsdfgen.sdfgen_channel_get_pd_b_id.restype = c_uint8
 libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
-libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool]
+libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p, c_uint64]
 libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
@@ -429,18 +431,22 @@ class SystemDescription:
         def __init__(
             self,
             name: str,
-            program_image: str,
+            program_image: Optional[str] = None,
             priority: Optional[int] = None,
             budget: Optional[int] = None,
             period: Optional[int] = None,
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            template: Optional[bool] = None,
         ) -> None:
             self._name = name
             c_name = c_char_p(name.encode("utf-8"))
-            c_program_image = c_char_p(program_image.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
+            if program_image is not None:
+                c_program_image = c_char_p(program_image.encode("utf-8"))
+                self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
+            else:
+                self._obj = libsdfgen.sdfgen_pd_create(c_name, None)
             self._child_pds = []
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
@@ -454,6 +460,8 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_stack_size(self._obj, stack_size)
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
+            if template is not None:
+                libsdfgen.sdfgen_pd_set_template(self._obj, template)
 
         @property
         def name(self) -> str:
@@ -558,9 +566,25 @@ class SystemDescription:
             perms: str,
             *,
             cached: bool = True,
+            setvar_vaddr: Optional[str] = None
         ) -> None:
             c_perms = SystemDescription.Map._perms_to_c_bindings(perms)
-            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached)
+            if setvar_vaddr is not None:
+                # Encode to C string (null-terminated)
+                c_name = setvar_vaddr.encode("utf-8")
+                vaddr_len = len(c_name)
+            else:
+                c_name = None
+                vaddr_len = 0
+
+            self._obj = libsdfgen.sdfgen_map_create(
+                mr._obj,
+                vaddr,
+                c_perms,
+                cached,
+                c_name,
+                vaddr_len
+            )
             if self._obj is None:
                 raise Exception("failed to create mapping")
 
