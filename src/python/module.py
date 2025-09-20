@@ -808,9 +808,9 @@ class Sddf:
             if self._obj is None:
                 raise Exception("failed to create serial system")
 
-        def add_client(self, client: SystemDescription.ProtectionDomain, optional: bool = None):
+        def add_client(self, client: SystemDescription.ProtectionDomain, optional: bool = False):
             """Add a new client connection to the serial system."""
-            if optional is not None:
+            if optional is not False:
                 ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj, True)
             else:
                 ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj, False)
