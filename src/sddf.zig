@@ -1016,8 +1016,7 @@ pub const Serial = struct {
         client_conn.id = channel.pd_b_id;
 
         if (optional) {
-            const acrs_name = fmt(system.allocator, "{s}/serial/acrs/{s}/{s}", .{ system.device.name, server.name, client.name });
-            var acrs = AcRs.create(system.allocator, acrs_name, client, 0);
+            var acrs = AcRs.create(system.allocator, client, 0);
             acrs.addMap(queue_mr_client_map);
             acrs.addMap(data_mr_client_map);
             client.addACRS(acrs);

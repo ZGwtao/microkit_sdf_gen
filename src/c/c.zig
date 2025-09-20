@@ -122,11 +122,10 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
     blob.deinit(allocator);
 }
 
-export fn sdfgen_acrs_create(name: [*c]u8, c_pd: *align(8) anyopaque, id: u8) *anyopaque {
+export fn sdfgen_acrs_create(c_pd: *align(8) anyopaque, id: u8) *anyopaque {
     const acrs = allocator.create(AcRs) catch @panic("OOM");
     const pd: *Pd = @ptrCast(c_pd);
-    const name_slice = std.mem.span(name);
-    acrs.* = AcRs.create(allocator, name_slice, pd, id);
+    acrs.* = AcRs.create(allocator, pd, id);
     return acrs;
 }
 
@@ -145,12 +144,10 @@ export fn sdfgen_acrs_add_map(c_acrs: *align(8) anyopaque, c_map: *align(8) anyo
 export fn sdfgen_acrs_add_irq(c_acrs: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
     const acrs: *AcRs = @ptrCast(c_acrs);
     const irq: *Irq = @ptrCast(c_irq);
-
     const id = acrs.addIrq(irq.*) catch |e| {
-        log.err("failed to add IRQ '{}' to PD '{s}': {}", .{ irq.irq, acrs.name, e });
+        log.err("failed to add IRQ '{}' to acrs : {}", .{ irq.irq, e });
         return -1;
     };
-
     return @intCast(id);
 }
 

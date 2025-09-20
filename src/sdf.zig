@@ -454,7 +454,6 @@ pub const SystemDescription = struct {
 
         pub const AccessRightsDomain: type = struct {
             allocator: Allocator,
-            name: []const u8,
             /// Memory mappings
             maps: ArrayList(Map),
             /// The length of this array is bound by the maximum number of IRQs a PD can have.
@@ -464,10 +463,9 @@ pub const SystemDescription = struct {
             /// acrs id
             id: ?u8,
 
-            pub fn create(allocator: Allocator, name: []const u8, ppd: *ProtectionDomain, id: u8) AccessRightsDomain {
+            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u8) AccessRightsDomain {
                 return AccessRightsDomain{
                     .allocator = allocator,
-                    .name = allocator.dupe(u8, name) catch @panic("Could not dupe ACRSDM name"),
                     .maps = ArrayList(Map).init(allocator),
                     .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                     .ppd = ppd,
@@ -517,28 +515,20 @@ pub const SystemDescription = struct {
             }
 
             pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u8) !void {
-                // try std.fmt.format(writer, "{s}<acrs_domain", .{separator});
-                try std.fmt.format(writer, "{s}<acrs_domain name=\"{s}\"", .{ separator, acrs.name });
+                try std.fmt.format(writer, "{s}<access_rights_domain", .{separator});
                 if (id) |id_val| {
                     try std.fmt.format(writer, " id=\"{}\"", .{id_val});
                 }
                 _ = try writer.write(">\n");
-
                 const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
                 defer sdf.allocator.free(child_separator);
-
                 for (acrs.maps.items) |map| {
                     try map.render(writer, child_separator);
                 }
                 for (acrs.irqs.items) |irq| {
                     try irq.render(writer, child_separator);
                 }
-                try std.fmt.format(writer, "{s}</acrs_domain>\n", .{separator});
-                // _ = acrs;
-                // _ = sdf;
-                // _ = writer;
-                // _ = separator;
-                // _ = id;
+                try std.fmt.format(writer, "{s}</access_rights_domain>\n", .{separator});
             }
         };
 
@@ -661,7 +651,6 @@ pub const SystemDescription = struct {
 
         pub fn addACRS(pd: *ProtectionDomain, acrs: AccessRightsDomain) void {
             if (pd.acrs_domains.items.len == MAX_ACRS_DMS) {
-                log.err("failed to add acrs '{s}' to PD '{s}', maximum ACRS reached", .{ acrs.name, pd.name });
                 return;
             }
             pd.acrs_domains.appendAssumeCapacity(acrs);

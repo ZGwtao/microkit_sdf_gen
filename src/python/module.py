@@ -131,7 +131,7 @@ libsdfgen.sdfgen_pd_add_irq.restype = c_int8
 libsdfgen.sdfgen_pd_add_irq.argtypes = [c_void_p, c_void_p]
 
 libsdfgen.sdfgen_acrs_create.restype = c_void_p
-libsdfgen.sdfgen_acrs_create.argtypes = [c_char_p, c_void_p, c_uint8]
+libsdfgen.sdfgen_acrs_create.argtypes = [c_void_p, c_uint8]
 libsdfgen.sdfgen_acrs_destroy.restype = None
 libsdfgen.sdfgen_acrs_destroy.argtypes = [c_void_p]
 
@@ -440,13 +440,10 @@ class SystemDescription:
 
         def __init__(
             self,
-            name: str,
             parent: SystemDescription.ProtectionDomain,
             id: int = 0
         ) -> None:
-            self._name = name
-            c_name = c_char_p(name.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_acrs_create(c_name, parent, id)
+            self._obj = libsdfgen.sdfgen_acrs_create(parent, id)
             self._pd = parent
 
         @property
