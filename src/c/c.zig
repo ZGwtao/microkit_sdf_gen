@@ -21,6 +21,7 @@ const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Arch = SystemDescription.Arch;
+const AcRs: type = Pd.AccessRightsDomain;
 
 // TODO: handle passing options to sDDF systems
 
@@ -119,6 +120,38 @@ export fn sdfgen_dtb_node(c_blob: *align(8) anyopaque, c_node: [*c]u8) ?*anyopaq
 export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
     const blob: *dtb.Node = @ptrCast(c_blob);
     blob.deinit(allocator);
+}
+
+export fn sdfgen_acrs_create(name: [*c]u8, c_pd: *align(8) anyopaque, id: u8) *anyopaque {
+    const acrs = allocator.create(AcRs) catch @panic("OOM");
+    const pd: *Pd = @ptrCast(c_pd);
+    const name_slice = std.mem.span(name);
+    acrs.* = AcRs.create(allocator, name_slice, pd, id);
+    return acrs;
+}
+
+export fn sdfgen_acrs_destroy(c_acrs: *align(8) anyopaque) void {
+    const acrs: *AcRs = @ptrCast(c_acrs);
+    allocator.destroy(acrs);
+}
+
+export fn sdfgen_acrs_add_map(c_acrs: *align(8) anyopaque, c_map: *align(8) anyopaque) void {
+    const acrs: *AcRs = @ptrCast(c_acrs);
+    const map: *Map = @ptrCast(c_map);
+
+    acrs.addMap(map.*);
+}
+
+export fn sdfgen_acrs_add_irq(c_acrs: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
+    const acrs: *AcRs = @ptrCast(c_acrs);
+    const irq: *Irq = @ptrCast(c_irq);
+
+    const id = acrs.addIrq(irq.*) catch |e| {
+        log.err("failed to add IRQ '{}' to PD '{s}': {}", .{ irq.irq, acrs.name, e });
+        return -1;
+    };
+
+    return @intCast(id);
 }
 
 export fn sdfgen_pd_create(name: [*c]u8, program_image: [*c]u8) *anyopaque {
@@ -496,9 +529,9 @@ export fn sdfgen_sddf_serial_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(serial);
 }
 
-export fn sdfgen_sddf_serial_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_serial_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, optional: bool) bindings.sdfgen_sddf_status_t {
     const serial: *sddf.Serial = @ptrCast(system);
-    serial.addClient(@ptrCast(client)) catch |e| {
+    serial.addClient(@ptrCast(client), optional) catch |e| {
         switch (e) {
             sddf.Serial.Error.DuplicateClient => return 1,
             sddf.Serial.Error.InvalidClient => return 2,

@@ -130,6 +130,16 @@ libsdfgen.sdfgen_pd_add_map.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_irq.restype = c_int8
 libsdfgen.sdfgen_pd_add_irq.argtypes = [c_void_p, c_void_p]
 
+libsdfgen.sdfgen_acrs_create.restype = c_void_p
+libsdfgen.sdfgen_acrs_create.argtypes = [c_char_p, c_void_p, c_uint8]
+libsdfgen.sdfgen_acrs_destroy.restype = None
+libsdfgen.sdfgen_acrs_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_acrs_add_map.restype = None
+libsdfgen.sdfgen_acrs_add_map.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_acrs_add_irq.restype = c_int8
+libsdfgen.sdfgen_acrs_add_irq.argtypes = [c_void_p, c_void_p]
+
 libsdfgen.sdfgen_sddf_timer.restype = c_void_p
 libsdfgen.sdfgen_sddf_timer.argtypes = [c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_timer_destroy.restype = None
@@ -176,7 +186,7 @@ libsdfgen.sdfgen_sddf_serial_destroy.restype = None
 libsdfgen.sdfgen_sddf_serial_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_serial_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_serial_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_serial_add_client.argtypes = [c_void_p, c_void_p, c_bool]
 
 libsdfgen.sdfgen_sddf_serial_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_connect.argtypes = [c_void_p]
@@ -422,11 +432,50 @@ class SystemDescription:
         X86 = 4,
         X86_64 = 5,
 
+    class AccessRightsDomain:
+        _name: str
+        _obj: c_void_p
+        _pd: SystemDescription.ProtectionDomain
+        _id: int
+
+        def __init__(
+            self,
+            name: str,
+            parent: SystemDescription.ProtectionDomain,
+            id: int = 0
+        ) -> None:
+            self._name = name
+            c_name = c_char_p(name.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_acrs_create(c_name, parent, id)
+            self._pd = parent
+
+        @property
+        def name(self) -> str:
+            return self._name
+
+        def add_map(self, map: SystemDescription.Map):
+            libsdfgen.sdfgen_acrs_add_map(self._obj, map._obj)
+
+        def add_irq(self, irq: SystemDescription.Irq) -> int:
+            id = libsdfgen.sdfgen_acrs_add_irq(self._obj, irq._obj)
+            if id < 0:
+                raise Exception(f"failed to add IRQ to acrsdm '{self.name}'")
+
+            return id
+
+        def __del__(self):
+            libsdfgen.sdfgen_acrs_destroy(self._obj)
+
+        def __repr__(self) -> str:
+            return f"AccessRightsDomain({self.name})"
+
+
     class ProtectionDomain:
         _name: str
         _obj: c_void_p
         # We need to hold references to the PDs in case they get GC'd.
         _child_pds: List[SystemDescription.ProtectionDomain]
+        _acrs_domains: List[SystemDescription.AccessRightsDomain]
 
         def __init__(
             self,
@@ -448,6 +497,7 @@ class SystemDescription:
             else:
                 self._obj = libsdfgen.sdfgen_pd_create(c_name, None)
             self._child_pds = []
+            self._acrs_domains = []
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
             if budget is not None:
@@ -761,9 +811,12 @@ class Sddf:
             if self._obj is None:
                 raise Exception("failed to create serial system")
 
-        def add_client(self, client: SystemDescription.ProtectionDomain):
+        def add_client(self, client: SystemDescription.ProtectionDomain, optional: bool = None):
             """Add a new client connection to the serial system."""
-            ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj)
+            if optional is not None:
+                ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj, True)
+            else:
+                ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj, False)
             if ret == SddfStatus.OK:
                 return
             elif ret == SddfStatus.DUPLICATE_CLIENT:

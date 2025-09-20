@@ -427,13 +427,16 @@ pub const SystemDescription = struct {
         template: ?bool,
         /// late_loading feature
         late_ld: ?bool,
-
+        /// Access Rights Domains for a PD
+        acrs_domains: ArrayList(AccessRightsDomain),
+        /// >
         setvars: ArrayList(SetVar),
 
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
         const MAX_IRQS: u8 = MAX_IDS;
         const MAX_CHILD_PDS: u8 = MAX_IDS;
+        const MAX_ACRS_DMS: u8 = MAX_IDS;
 
         pub const DEFAULT_PRIORITY: u8 = 100;
 
@@ -447,6 +450,96 @@ pub const SystemDescription = struct {
             cpu: ?u8 = null,
             template: ?bool = null,
             late_ld: ?bool = null,
+        };
+
+        pub const AccessRightsDomain: type = struct {
+            allocator: Allocator,
+            name: []const u8,
+            /// Memory mappings
+            maps: ArrayList(Map),
+            /// The length of this array is bound by the maximum number of IRQs a PD can have.
+            irqs: ArrayList(Irq),
+            /// PD id to its parent PD
+            ppd: *ProtectionDomain,
+            /// acrs id
+            id: ?u8,
+
+            pub fn create(allocator: Allocator, name: []const u8, ppd: *ProtectionDomain, id: u8) AccessRightsDomain {
+                return AccessRightsDomain{
+                    .allocator = allocator,
+                    .name = allocator.dupe(u8, name) catch @panic("Could not dupe ACRSDM name"),
+                    .maps = ArrayList(Map).init(allocator),
+                    .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
+                    .ppd = ppd,
+                    .id = id,
+                };
+            }
+
+            pub fn destroy(acrs: *AccessRightsDomain) void {
+                acrs.allocator.free(acrs.name);
+                acrs.maps.deinit();
+                acrs.irqs.deinit();
+            }
+
+            pub fn addMap(acrs: *AccessRightsDomain, map: Map) void {
+                acrs.maps.append(map) catch @panic("Could not add Map to AccssRightsDomain");
+            }
+
+            pub fn addIrq(acrs: *AccessRightsDomain, irq: Irq) !u8 {
+                // If the IRQ ID is already set, then we check that we can allocate it with
+                // the PD.
+                if (irq.id) |id| {
+                    _ = try acrs.ppd.allocateId(id);
+                    try acrs.irqs.append(irq);
+                    return id;
+                } else {
+                    var irq_with_id = irq;
+                    irq_with_id.id = try acrs.ppd.allocateId(null);
+                    try acrs.irqs.append(irq_with_id);
+                    return irq_with_id.id.?;
+                }
+            }
+
+            /// Copied from the ProtectionDomain struct
+            pub fn getMapVaddr(acrs: *AccessRightsDomain, mr: *const MemoryRegion) u64 {
+                const page_size = MemoryRegion.PageSize.optimal(.aarch64, mr.size).toInt(.aarch64);
+                var next_vaddr: u64 = 0x20_000_000;
+                for (acrs.maps.items) |map| {
+                    if (map.vaddr >= next_vaddr) {
+                        next_vaddr = map.vaddr + map.mr.size;
+                        const diff = next_vaddr % page_size;
+                        if (diff != 0) {
+                            next_vaddr += page_size - diff;
+                        }
+                    }
+                }
+                return next_vaddr;
+            }
+
+            pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u8) !void {
+                // try std.fmt.format(writer, "{s}<acrs_domain", .{separator});
+                try std.fmt.format(writer, "{s}<acrs_domain name=\"{s}\"", .{ separator, acrs.name });
+                if (id) |id_val| {
+                    try std.fmt.format(writer, " id=\"{}\"", .{id_val});
+                }
+                _ = try writer.write(">\n");
+
+                const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
+                defer sdf.allocator.free(child_separator);
+
+                for (acrs.maps.items) |map| {
+                    try map.render(writer, child_separator);
+                }
+                for (acrs.irqs.items) |irq| {
+                    try irq.render(writer, child_separator);
+                }
+                try std.fmt.format(writer, "{s}</acrs_domain>\n", .{separator});
+                // _ = acrs;
+                // _ = sdf;
+                // _ = writer;
+                // _ = separator;
+                // _ = id;
+            }
         };
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
@@ -472,6 +565,7 @@ pub const SystemDescription = struct {
                 .cpu = options.cpu,
                 .template = options.template,
                 .late_ld = options.late_ld,
+                .acrs_domains = ArrayList(AccessRightsDomain).initCapacity(allocator, MAX_ACRS_DMS) catch @panic("Could not allocate acrs"),
             };
         }
 
@@ -489,6 +583,7 @@ pub const SystemDescription = struct {
                 vm.destroy();
             }
             pd.irqs.deinit();
+            pd.acrs_domains.deinit();
         }
 
         /// There may be times where PD resources with an ID, such as a channel
@@ -562,6 +657,14 @@ pub const SystemDescription = struct {
             child.child_id = try pd.allocateId(options.id);
 
             return child.child_id.?;
+        }
+
+        pub fn addACRS(pd: *ProtectionDomain, acrs: AccessRightsDomain) void {
+            if (pd.acrs_domains.items.len == MAX_ACRS_DMS) {
+                log.err("failed to add acrs '{s}' to PD '{s}', maximum ACRS reached", .{ acrs.name, pd.name });
+                return;
+            }
+            pd.acrs_domains.appendAssumeCapacity(acrs);
         }
 
         // TODO: get rid of this extra arg?
@@ -668,6 +771,9 @@ pub const SystemDescription = struct {
             }
             for (pd.setvars.items) |setvar| {
                 try setvar.render(writer, child_separator);
+            }
+            for (pd.acrs_domains.items) |acrs| {
+                try acrs.render(sdf, writer, child_separator, acrs.id);
             }
 
             if (pd.template) |template| {

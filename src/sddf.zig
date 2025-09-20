@@ -15,6 +15,7 @@ const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
 const Channel = SystemDescription.Channel;
 const SetVar = SystemDescription.SetVar;
+const AcRs: type = Pd.AccessRightsDomain;
 
 const ConfigResources = data.Resources;
 
@@ -969,7 +970,8 @@ pub const Serial = struct {
         system.client_configs.deinit();
     }
 
-    pub fn addClient(system: *Serial, client: *Pd) Error!void {
+    pub fn addClient(system: *Serial, client: *Pd, optional: bool) Error!void {
+        _ = optional;
         // Check that the client does not already exist
         for (system.clients.items) |existing_client| {
             if (std.mem.eql(u8, existing_client.name, client.name)) {
@@ -984,7 +986,7 @@ pub const Serial = struct {
         return system.virt_rx != null;
     }
 
-    fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection) void {
+    fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool) void {
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -994,7 +996,6 @@ pub const Serial = struct {
         server_conn.queue = .createFromMap(queue_mr_server_map);
 
         const queue_mr_client_map = Map.create(queue_mr, client.getMapVaddr(&queue_mr), .rw, .{});
-        client.addMap(queue_mr_client_map);
         client_conn.queue = .createFromMap(queue_mr_client_map);
 
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.device.name, server.name, client.name });
@@ -1007,13 +1008,23 @@ pub const Serial = struct {
         server_conn.data = .createFromMap(data_mr_server_map);
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
-        client.addMap(data_mr_client_map);
         client_conn.data = .createFromMap(data_mr_client_map);
 
         const channel = Channel.create(server, client, .{}) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
+
+        if (optional) {
+            const acrs_name = fmt(system.allocator, "{s}/serial/acrs/{s}/{s}", .{ system.device.name, server.name, client.name });
+            var acrs = AcRs.create(system.allocator, acrs_name, client, 0);
+            acrs.addMap(queue_mr_client_map);
+            acrs.addMap(data_mr_client_map);
+            client.addACRS(acrs);
+        } else {
+            client.addMap(queue_mr_client_map);
+            client.addMap(data_mr_client_map);
+        }
     }
 
     pub fn connect(system: *Serial) !void {
@@ -1022,11 +1033,11 @@ pub const Serial = struct {
         system.driver_config.default_baud = 115200;
 
         if (system.hasRx()) {
-            system.createConnection(system.driver, system.virt_rx.?, &system.driver_config.rx, &system.virt_rx_config.driver);
+            system.createConnection(system.driver, system.virt_rx.?, &system.driver_config.rx, &system.virt_rx_config.driver, false);
 
             system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
             for (system.clients.items, 0..) |client, i| {
-                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx);
+                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, false);
             }
 
             system.driver_config.rx_enabled = 1;
@@ -1037,7 +1048,7 @@ pub const Serial = struct {
             system.virt_tx_config.enable_rx = 1;
         }
 
-        system.createConnection(system.driver, system.virt_tx, &system.driver_config.tx, &system.virt_tx_config.driver);
+        system.createConnection(system.driver, system.virt_tx, &system.driver_config.tx, &system.virt_tx_config.driver, false);
 
         system.virt_tx_config.num_clients = @intCast(system.clients.items.len);
         for (system.clients.items, 0..) |client, i| {
@@ -1046,7 +1057,7 @@ pub const Serial = struct {
             assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
             assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
 
-            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx);
+            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, true);
         }
 
         system.virt_tx_config.enable_colour = @intFromBool(system.enable_color);

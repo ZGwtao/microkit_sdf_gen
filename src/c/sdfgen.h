@@ -41,12 +41,21 @@ void *sdfgen_add_pd(void *sdf, void *pd);
 void *sdfgen_add_mr(void *sdf, void *mr);
 void *sdfgen_add_channel(void *sdf, void *ch);
 
+/* access rights domains */
+void *sdfgen_acrs_create(char *name, void *pd, uint8_t id);
+void sdfgen_acrs_destroy(void *acrs);
+
+void sdfgen_acrs_add_map(void *acrs, void *map);
+int8_t sdfgen_acrs_add_irq(void *acrs, void *irq);
+
+
 void *sdfgen_pd_create(char *name, char *elf);
 void sdfgen_pd_destroy(void *pd);
 
 /* Can specifiy a fixed ID  */
 int8_t sdfgen_pd_add_child(void *sdf, void *child_pd, uint8_t *child_id);
 void sdfgen_pd_add_map(void *pd, void *map);
+int8_t sdfgen_pd_add_irq(void *pd, void *irq);
 void sdfgen_pd_set_priority(void *pd, uint8_t priority);
 void sdfgen_pd_set_budget(void *pd, uint32_t budget);
 void sdfgen_pd_set_period(void *pd, uint32_t period);
@@ -103,7 +112,7 @@ bool sdfgen_sddf_timer_connect(void *system);
 bool sdfgen_sddf_timer_serialise_config(void *system, char *output_dir);
 
 void *sdfgen_sddf_serial(void *sdf, void *device, void *driver, void *virt_tx, void *virt_rx, bool enable_color);
-sdfgen_sddf_status_t sdfgen_sddf_serial_add_client(void *system, void *client);
+sdfgen_sddf_status_t sdfgen_sddf_serial_add_client(void *system, void *client, bool optional);
 bool sdfgen_sddf_serial_connect(void *system);
 bool sdfgen_sddf_serial_serialise_config(void *system, char *output_dir);
 

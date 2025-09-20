@@ -207,7 +207,7 @@ pub const FileSystem = struct {
             try nfs.net.addClientWithCopier(fs_pd, nfs.net_copier, .{
                 .mac_addr = nfs.mac_addr,
             });
-            try nfs.serial.addClient(fs_pd);
+            try nfs.serial.addClient(fs_pd, false);
             try nfs.timer.addClient(fs_pd);
 
             nfs.fs.connect(.{});
