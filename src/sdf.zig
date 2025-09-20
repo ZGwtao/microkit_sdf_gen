@@ -462,6 +462,8 @@ pub const SystemDescription = struct {
             ppd: *ProtectionDomain,
             /// acrs id
             id: ?u8,
+            /// Channel endpoint IDs
+            channels: ArrayList(u8),
 
             pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u8) AccessRightsDomain {
                 return AccessRightsDomain{
@@ -470,6 +472,7 @@ pub const SystemDescription = struct {
                     .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                     .ppd = ppd,
                     .id = id,
+                    .channels = ArrayList(u8).init(allocator),
                 };
             }
 
@@ -496,6 +499,10 @@ pub const SystemDescription = struct {
                     try acrs.irqs.append(irq_with_id);
                     return irq_with_id.id.?;
                 }
+            }
+
+            pub fn addChannel(acrs: *AccessRightsDomain, end_id: u8) void {
+                acrs.channels.append(end_id) catch @panic("Could not add channel to AccessRightsDomain");
             }
 
             /// Copied from the ProtectionDomain struct
@@ -527,6 +534,9 @@ pub const SystemDescription = struct {
                 }
                 for (acrs.irqs.items) |irq| {
                     try irq.render(writer, child_separator);
+                }
+                for (acrs.channels.items) |cid| {
+                    try std.fmt.format(writer, "{s}<channel_end id=\"{}\"/>\n", .{ child_separator, cid });
                 }
                 try std.fmt.format(writer, "{s}</access_rights_domain>\n", .{separator});
             }

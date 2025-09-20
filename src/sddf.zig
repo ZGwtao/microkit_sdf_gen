@@ -1023,6 +1023,8 @@ pub const Serial = struct {
             // add connections
             acrs.addMap(queue_mr_client_map);
             acrs.addMap(data_mr_client_map);
+            // add channels
+            acrs.addChannel(client_conn.id);
 
             client.addACRS(acrs);
         } else {
