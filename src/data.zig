@@ -180,6 +180,7 @@ pub const Resources = struct {
             magic: [5]u8 = MAGIC,
             rx: Connection,
             tx: Connection,
+            optional: bool,
         };
     };
 
