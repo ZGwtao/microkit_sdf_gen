@@ -325,6 +325,7 @@ pub const Timer = struct {
     /// Client PDs serviced by the timer driver
     clients: std.ArrayList(*Pd),
     client_configs: std.ArrayList(ConfigResources.Timer.Client),
+    client_optionals: std.ArrayList(bool),
     connected: bool = false,
     serialised: bool = false,
 
@@ -343,12 +344,14 @@ pub const Timer = struct {
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .clients = std.ArrayList(*Pd).init(allocator),
             .client_configs = std.ArrayList(ConfigResources.Timer.Client).init(allocator),
+            .client_optionals = std.ArrayList(bool).init(allocator),
         };
     }
 
     pub fn deinit(system: *Timer) void {
         system.clients.deinit();
         system.client_configs.deinit();
+        system.client_optionals.deinit();
     }
 
     pub fn addClient(system: *Timer, client: *Pd, optional: bool) Error!void {
@@ -369,7 +372,8 @@ pub const Timer = struct {
             return Error.InvalidClient;
         }
         system.clients.append(client) catch @panic("Could not add client to Timer");
-        system.client_configs.append(std.mem.zeroInit(ConfigResources.Timer.Client, .{ .optional = optional })) catch @panic("Could not add client to Timer");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Timer.Client, .{})) catch @panic("Could not add client to Timer");
+        system.client_optionals.append(optional) catch @panic("Could not add client optionals to Timer");
     }
 
     pub fn connect(system: *Timer) !void {
@@ -386,7 +390,7 @@ pub const Timer = struct {
             }) catch unreachable;
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
-            if (system.client_configs.items[i].optional) {
+            if (system.client_optionals.items[i]) {
                 var acrs = AcRs.create(system.allocator, client, 0);
                 // id is local to a protection domain
                 acrs.id = client.allocateId(null) catch {
@@ -979,6 +983,7 @@ pub const Serial = struct {
     pub fn deinit(system: *Serial) void {
         system.clients.deinit();
         system.client_configs.deinit();
+        system.client_optionals.deinit();
     }
 
     pub fn addClient(system: *Serial, client: *Pd, optional: bool) Error!void {
