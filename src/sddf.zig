@@ -1021,7 +1021,9 @@ pub const Serial = struct {
         const queue_mr_client_vaddr = client.getMapVaddr(&queue_mr);
         const queue_mr_client_map = Map.create(queue_mr, queue_mr_client_vaddr, .rw, .{});
         client_conn.queue = .createFromMap(queue_mr_client_map);
-        client.addMap(queue_mr_client_map);
+        if (!optional) {
+            client.addMap(queue_mr_client_map);
+        }
         if (optional) {
             acrs.addMap(queue_mr_client_map);
         }
@@ -1037,7 +1039,9 @@ pub const Serial = struct {
         const data_mr_client_vaddr = client.getMapVaddr(&data_mr);
         const data_mr_client_map = Map.create(data_mr, data_mr_client_vaddr, .rw, .{});
         client_conn.data = .createFromMap(data_mr_client_map);
-        client.addMap(data_mr_client_map);
+        if (!optional) {
+            client.addMap(data_mr_client_map);
+        }
         if (optional) {
             acrs.addMap(data_mr_client_map);
         }
