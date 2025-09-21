@@ -927,6 +927,7 @@ pub const Serial = struct {
     virt_rx_config: ConfigResources.Serial.VirtRx,
     virt_tx_config: ConfigResources.Serial.VirtTx,
     client_configs: std.ArrayList(ConfigResources.Serial.Client),
+    client_optionals: std.ArrayList(bool),
 
     pub const Error = SystemError || error{
         InvalidVirt,
@@ -971,6 +972,7 @@ pub const Serial = struct {
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Serial.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Serial.VirtTx, .{}),
             .client_configs = std.ArrayList(ConfigResources.Serial.Client).init(allocator),
+            .client_optionals = std.ArrayList(bool).init(allocator),
         };
     }
 
@@ -987,7 +989,8 @@ pub const Serial = struct {
             }
         }
         system.clients.append(client) catch @panic("Could not add client to Serial");
-        system.client_configs.append(std.mem.zeroInit(ConfigResources.Serial.Client, .{ .optional = optional })) catch @panic("Could not add client to Serial");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Serial.Client, .{})) catch @panic("Could not add client to Serial");
+        system.client_optionals.append(optional) catch @panic("Could not add client optionals to Serial");
     }
 
     fn hasRx(system: *Serial) bool {
@@ -1013,9 +1016,8 @@ pub const Serial = struct {
         const queue_mr_client_vaddr = client.getMapVaddr(&queue_mr);
         const queue_mr_client_map = Map.create(queue_mr, queue_mr_client_vaddr, .rw, .{});
         client_conn.queue = .createFromMap(queue_mr_client_map);
-        if (!optional) {
-            client.addMap(queue_mr_client_map);
-        } else {
+        client.addMap(queue_mr_client_map);
+        if (optional) {
             acrs.addMap(queue_mr_client_map);
         }
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.device.name, server.name, client.name });
@@ -1030,16 +1032,17 @@ pub const Serial = struct {
         const data_mr_client_vaddr = client.getMapVaddr(&data_mr);
         const data_mr_client_map = Map.create(data_mr, data_mr_client_vaddr, .rw, .{});
         client_conn.data = .createFromMap(data_mr_client_map);
-        if (!optional) {
-            client.addMap(data_mr_client_map);
-        } else {
+        client.addMap(data_mr_client_map);
+        if (optional) {
             acrs.addMap(data_mr_client_map);
         }
         const channel = Channel.create(server, client, .{}) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
-        acrs.addChannel(client_conn.id);
+        if (optional) {
+            acrs.addChannel(client_conn.id);
+        }
 
         if (optional) {
             client.addACRS(acrs);
@@ -1058,7 +1061,7 @@ pub const Serial = struct {
 
             system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
             for (system.clients.items, 0..) |client, i| {
-                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, system.client_configs.items[i].optional);
+                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, system.client_optionals.items[i]);
             }
 
             system.driver_config.rx_enabled = 1;
@@ -1078,7 +1081,7 @@ pub const Serial = struct {
             assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
             assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
 
-            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, system.client_configs.items[i].optional);
+            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, system.client_optionals.items[i]);
         }
 
         system.virt_tx_config.enable_colour = @intFromBool(system.enable_color);
