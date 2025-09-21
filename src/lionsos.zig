@@ -236,7 +236,8 @@ pub const FileSystem = struct {
                 .mac_addr = nfs.mac_addr,
             });
             try nfs.serial.addClient(fs_pd, false);
-            try nfs.timer.addClient(fs_pd);
+            // FIXME
+            try nfs.timer.addClient(fs_pd, false);
 
             nfs.fs.connect(.{});
         }

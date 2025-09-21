@@ -351,7 +351,7 @@ pub const Timer = struct {
         system.client_configs.deinit();
     }
 
-    pub fn addClient(system: *Timer, client: *Pd) Error!void {
+    pub fn addClient(system: *Timer, client: *Pd, optional: bool) Error!void {
         // Check that the client does not already exist
         for (system.clients.items) |existing_client| {
             if (std.mem.eql(u8, existing_client.name, client.name)) {
@@ -369,7 +369,7 @@ pub const Timer = struct {
             return Error.InvalidClient;
         }
         system.clients.append(client) catch @panic("Could not add client to Timer");
-        system.client_configs.append(std.mem.zeroInit(ConfigResources.Timer.Client, .{})) catch @panic("Could not add client to Timer");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Timer.Client, .{ .optional = optional })) catch @panic("Could not add client to Timer");
     }
 
     pub fn connect(system: *Timer) !void {
@@ -386,6 +386,15 @@ pub const Timer = struct {
             }) catch unreachable;
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
+            if (system.client_configs.items[i].optional) {
+                var acrs = AcRs.create(system.allocator, client, 0);
+                // id is local to a protection domain
+                acrs.id = client.allocateId(null) catch {
+                    @panic("failed to allocate id");
+                };
+                acrs.addChannel(system.client_configs.items[i].driver_id);
+                client.addACRS(acrs);
+            }
         }
 
         system.connected = true;

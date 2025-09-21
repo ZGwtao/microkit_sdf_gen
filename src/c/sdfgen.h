@@ -107,7 +107,7 @@ void *sdfgen_sddf_init(char *path);
 
 void *sdfgen_sddf_timer(void *sdf, void *device, void *driver);
 void sdfgen_sddf_timer_destroy(void *system);
-sdfgen_sddf_status_t sdfgen_sddf_timer_add_client(void *system, void *client);
+sdfgen_sddf_status_t sdfgen_sddf_timer_add_client(void *system, void *client, bool optional);
 bool sdfgen_sddf_timer_connect(void *system);
 bool sdfgen_sddf_timer_serialise_config(void *system, char *output_dir);
 

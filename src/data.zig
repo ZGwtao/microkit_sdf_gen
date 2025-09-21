@@ -284,6 +284,7 @@ pub const Resources = struct {
         pub const Client = extern struct {
             magic: [5]u8 = MAGIC,
             driver_id: u8,
+            optional: bool,
         };
     };
 

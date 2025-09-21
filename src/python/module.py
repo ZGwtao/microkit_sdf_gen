@@ -146,7 +146,7 @@ libsdfgen.sdfgen_sddf_timer_destroy.restype = None
 libsdfgen.sdfgen_sddf_timer_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_timer_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_timer_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_timer_add_client.argtypes = [c_void_p, c_void_p, c_bool]
 
 libsdfgen.sdfgen_sddf_timer_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_timer_connect.argtypes = [c_void_p]
@@ -1015,8 +1015,8 @@ class Sddf:
 
             self._obj: c_void_p = libsdfgen.sdfgen_sddf_timer(sdf._obj, device_obj, driver._obj)
 
-        def add_client(self, client: SystemDescription.ProtectionDomain):
-            ret = libsdfgen.sdfgen_sddf_timer_add_client(self._obj, client._obj)
+        def add_client(self, client: SystemDescription.ProtectionDomain, optional: bool = False):
+            ret = libsdfgen.sdfgen_sddf_timer_add_client(self._obj, client._obj, optional)
             if ret == SddfStatus.OK:
                 return
             elif ret == SddfStatus.DUPLICATE_CLIENT:
