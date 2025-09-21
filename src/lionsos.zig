@@ -101,11 +101,12 @@ pub const FileSystem = struct {
         const client = system.client;
 
         var acrs = AcRs.create(allocator, client, 0);
-        // id is local to a protection domain
-        acrs.id = client.allocateId(null) catch {
-            @panic("failed to allocate id");
-        };
-
+        if ((options.optional orelse false)) {
+            // id is local to a protection domain
+            acrs.id = client.allocateId(null) catch {
+                @panic("failed to allocate id");
+            };
+        }
         const fs_command_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_command_queue", .{fs.name}), system.command_queue_size, .{});
         const fs_completion_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_completion_queue", .{fs.name}), system.completion_queue_size, .{});
 

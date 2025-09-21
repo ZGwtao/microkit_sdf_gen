@@ -996,10 +996,12 @@ pub const Serial = struct {
 
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool) void {
         var acrs = AcRs.create(system.allocator, client, 0);
-        // id is local to a protection domain
-        acrs.id = client.allocateId(null) catch {
-            @panic("failed to allocate id");
-        };
+        if (optional) {
+            // id is local to a protection domain
+            acrs.id = client.allocateId(null) catch {
+                @panic("failed to allocate id");
+            };
+        }
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
