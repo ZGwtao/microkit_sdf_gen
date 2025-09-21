@@ -270,7 +270,7 @@ libsdfgen.sdfgen_vmm_serialise_config.argtypes = [c_void_p, c_char_p]
 libsdfgen.sdfgen_lionsos_fs_fat.restype = c_void_p
 libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_lionsos_fs_fat_connect.restype = c_bool
-libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p, c_bool]
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.argtypes = [c_void_p, c_char_p]
 libsdfgen.sdfgen_lionsos_fs_nfs.restype = c_void_p
@@ -1200,8 +1200,8 @@ class LionsOs:
                 if self._obj is None:
                     raise Exception("failed to create FAT file system")
 
-            def connect(self) -> bool:
-                return libsdfgen.sdfgen_lionsos_fs_fat_connect(self._obj)
+            def connect(self, optional: bool = False) -> bool:
+                return libsdfgen.sdfgen_lionsos_fs_fat_connect(self._obj, optional)
 
             def serialise_config(self, output_dir: str) -> bool:
                 c_output_dir = c_char_p(output_dir.encode("utf-8"))

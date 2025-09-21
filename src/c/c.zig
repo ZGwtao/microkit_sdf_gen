@@ -868,9 +868,9 @@ export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyo
     return fs;
 }
 
-export fn sdfgen_lionsos_fs_fat_connect(system: *align(8) anyopaque) bool {
+export fn sdfgen_lionsos_fs_fat_connect(system: *align(8) anyopaque, optional: bool) bool {
     const fat: *lionsos.FileSystem.Fat = @ptrCast(system);
-    fat.connect() catch |e| {
+    fat.connect(optional) catch |e| {
         log.err("failed to connect FAT file system '{s}': {any}", .{ fat.fs.fs.name, e });
         return false;
     };

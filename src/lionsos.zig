@@ -12,6 +12,7 @@ const Pd = SystemDescription.ProtectionDomain;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Channel = SystemDescription.Channel;
+const AcRs: type = Pd.AccessRightsDomain;
 
 const ConfigResources = data.Resources;
 
@@ -91,12 +92,19 @@ pub const FileSystem = struct {
         command_vaddr: ?u64 = null,
         completion_vaddr: ?u64 = null,
         share_vaddr: ?u64 = null,
+        optional: ?bool = false,
     };
 
     pub fn connect(system: *FileSystem, options: ConnectOptions) void {
         const allocator = system.allocator;
         const fs = system.fs;
         const client = system.client;
+
+        var acrs = AcRs.create(allocator, client, 0);
+        // id is local to a protection domain
+        acrs.id = client.allocateId(null) catch {
+            @panic("failed to allocate id");
+        };
 
         const fs_command_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_command_queue", .{fs.name}), system.command_queue_size, .{});
         const fs_completion_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_completion_queue", .{fs.name}), system.completion_queue_size, .{});
@@ -127,16 +135,27 @@ pub const FileSystem = struct {
         createMapping(fs, server_share_map);
 
         const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
-        system.client.addMap(client_command_map);
+        if (!(options.optional orelse false)) {
+            system.client.addMap(client_command_map);
+        } else {
+            acrs.addMap(client_command_map);
+        }
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
         const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
-
-        system.client.addMap(client_completion_map);
+        if (!(options.optional orelse false)) {
+            system.client.addMap(client_completion_map);
+        } else {
+            acrs.addMap(client_completion_map);
+        }
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
         const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
-        system.client.addMap(client_share_map);
+        if (!(options.optional orelse false)) {
+            system.client.addMap(client_share_map);
+        } else {
+            acrs.addMap(client_share_map);
+        }
         system.client_config.server.share = .createFromMap(client_share_map);
 
         system.server_config.client.queue_len = 512;
@@ -146,6 +165,15 @@ pub const FileSystem = struct {
         system.sdf.addChannel(channel);
         system.server_config.client.id = channel.pd_a_id;
         system.client_config.server.id = channel.pd_b_id;
+        if (options.optional orelse false) {
+            acrs.addChannel(system.client_config.server.id);
+        }
+
+        if (options.optional orelse false) {
+            client.addACRS(acrs);
+        } else {
+            acrs.destroy();
+        }
     }
 
     pub fn serialiseConfig(system: *FileSystem, prefix: []const u8) !void {
@@ -240,7 +268,7 @@ pub const FileSystem = struct {
             };
         }
 
-        pub fn connect(fat: *Fat) !void {
+        pub fn connect(fat: *Fat, optional: bool) !void {
             const allocator = fat.allocator;
             const sdf = fat.fs.sdf;
             const fs_pd = fat.fs.fs;
@@ -248,7 +276,7 @@ pub const FileSystem = struct {
             try fat.blk.addClient(fs_pd, .{
                 .partition = fat.partition,
             });
-            fat.fs.connect(.{});
+            fat.fs.connect(.{ .optional = optional });
             // Special things for FATFS
             const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, .{});
             const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, .{});
