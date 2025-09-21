@@ -987,10 +987,12 @@ pub const Serial = struct {
 
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool) void {
         var acrs = AcRs.create(system.allocator, client, 0);
-        // id is local to a protection domain
-        acrs.id = client.allocateId(null) catch {
-            @panic("failed to allocate id");
-        };
+        if (optional) {
+            // id is local to a protection domain
+            acrs.id = client.allocateId(null) catch {
+                @panic("failed to allocate id");
+            };
+        }
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -1002,9 +1004,8 @@ pub const Serial = struct {
         const queue_mr_client_vaddr = client.getMapVaddr(&queue_mr);
         const queue_mr_client_map = Map.create(queue_mr, queue_mr_client_vaddr, .rw, .{});
         client_conn.queue = .createFromMap(queue_mr_client_map);
-        if (!optional) {
-            client.addMap(queue_mr_client_map);
-        } else {
+        client.addMap(queue_mr_client_map);
+        if (optional) {
             acrs.addMap(queue_mr_client_map);
         }
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.device.name, server.name, client.name });
@@ -1019,16 +1020,17 @@ pub const Serial = struct {
         const data_mr_client_vaddr = client.getMapVaddr(&data_mr);
         const data_mr_client_map = Map.create(data_mr, data_mr_client_vaddr, .rw, .{});
         client_conn.data = .createFromMap(data_mr_client_map);
-        if (!optional) {
-            client.addMap(data_mr_client_map);
-        } else {
+        client.addMap(data_mr_client_map);
+        if (optional) {
             acrs.addMap(data_mr_client_map);
         }
         const channel = Channel.create(server, client, .{}) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
-        acrs.addChannel(client_conn.id);
+        if (optional) {
+            acrs.addChannel(client_conn.id);
+        }
 
         if (optional) {
             client.addACRS(acrs);
