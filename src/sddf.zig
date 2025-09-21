@@ -918,6 +918,7 @@ pub const Serial = struct {
     virt_rx_config: ConfigResources.Serial.VirtRx,
     virt_tx_config: ConfigResources.Serial.VirtTx,
     client_configs: std.ArrayList(ConfigResources.Serial.Client),
+    client_optionals: std.ArrayList(bool),
 
     pub const Error = SystemError || error{
         InvalidVirt,
@@ -962,6 +963,7 @@ pub const Serial = struct {
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Serial.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Serial.VirtTx, .{}),
             .client_configs = std.ArrayList(ConfigResources.Serial.Client).init(allocator),
+            .client_optionals = std.ArrayList(bool).init(allocator),
         };
     }
 
@@ -978,7 +980,8 @@ pub const Serial = struct {
             }
         }
         system.clients.append(client) catch @panic("Could not add client to Serial");
-        system.client_configs.append(std.mem.zeroInit(ConfigResources.Serial.Client, .{ .optional = optional })) catch @panic("Could not add client to Serial");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Serial.Client, .{})) catch @panic("Could not add client to Serial");
+        system.client_optionals.append(optional) catch @panic("Could not add client optionals to Serial");
     }
 
     fn hasRx(system: *Serial) bool {
@@ -1049,7 +1052,7 @@ pub const Serial = struct {
 
             system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
             for (system.clients.items, 0..) |client, i| {
-                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, system.client_configs.items[i].optional);
+                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, system.client_optionals.items[i]);
             }
 
             system.driver_config.rx_enabled = 1;
@@ -1069,7 +1072,7 @@ pub const Serial = struct {
             assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
             assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
 
-            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, system.client_configs.items[i].optional);
+            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, system.client_optionals.items[i]);
         }
 
         system.virt_tx_config.enable_colour = @intFromBool(system.enable_color);
