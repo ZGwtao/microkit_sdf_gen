@@ -431,6 +431,8 @@ pub const SystemDescription = struct {
         acrs_domains: ArrayList(AccessRightsDomain),
         /// >
         setvars: ArrayList(SetVar),
+        /// > this is the real list, containing those not for non-optional mappings...
+        maps_reserved: ArrayList(Map),
 
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
@@ -477,13 +479,14 @@ pub const SystemDescription = struct {
             }
 
             pub fn destroy(acrs: *AccessRightsDomain) void {
-                acrs.allocator.free(acrs.name);
                 acrs.maps.deinit();
                 acrs.irqs.deinit();
+                acrs.channels.deinit();
             }
 
             pub fn addMap(acrs: *AccessRightsDomain, map: Map) void {
-                acrs.maps.append(map) catch @panic("Could not add Map to AccssRightsDomain");
+                acrs.ppd.addMapReserved(map);
+                acrs.maps.append(map) catch @panic("Could not add Map to ACRS");
             }
 
             pub fn addIrq(acrs: *AccessRightsDomain, irq: Irq) !u8 {
@@ -503,22 +506,6 @@ pub const SystemDescription = struct {
 
             pub fn addChannel(acrs: *AccessRightsDomain, end_id: u8) void {
                 acrs.channels.append(end_id) catch @panic("Could not add channel to AccessRightsDomain");
-            }
-
-            /// Copied from the ProtectionDomain struct
-            pub fn getMapVaddr(acrs: *AccessRightsDomain, mr: *const MemoryRegion) u64 {
-                const page_size = MemoryRegion.PageSize.optimal(.aarch64, mr.size).toInt(.aarch64);
-                var next_vaddr: u64 = 0x20_000_000;
-                for (acrs.maps.items) |map| {
-                    if (map.vaddr >= next_vaddr) {
-                        next_vaddr = map.vaddr + map.mr.size;
-                        const diff = next_vaddr % page_size;
-                        if (diff != 0) {
-                            next_vaddr += page_size - diff;
-                        }
-                    }
-                }
-                return next_vaddr;
             }
 
             pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u8) !void {
@@ -550,6 +537,7 @@ pub const SystemDescription = struct {
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe PD name"),
                 .program_image = program_image_dupe,
                 .maps = ArrayList(Map).init(allocator),
+                .maps_reserved = ArrayList(Map).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .vm = null,
@@ -575,6 +563,7 @@ pub const SystemDescription = struct {
                 pd.allocator.free(program_image);
             }
             pd.maps.deinit();
+            pd.maps_reserved.deinit();
             for (pd.child_pds.items) |child_pd| {
                 child_pd.destroy();
             }
@@ -620,6 +609,11 @@ pub const SystemDescription = struct {
 
         pub fn addMap(pd: *ProtectionDomain, map: Map) void {
             pd.maps.append(map) catch @panic("Could not add Map to ProtectionDomain");
+            pd.maps_reserved.append(map) catch @panic("Could not add (reserved) Map to ProtectionDomain");
+        }
+
+        pub fn addMapReserved(pd: *ProtectionDomain, map: Map) void {
+            pd.maps_reserved.append(map) catch @panic("Could not add (reserved) Map to ProtectionDomain");
         }
 
         pub fn addIrq(pd: *ProtectionDomain, irq: Irq) !u8 {
@@ -666,36 +660,18 @@ pub const SystemDescription = struct {
             pd.acrs_domains.appendAssumeCapacity(acrs);
         }
 
-        // TODO: get rid of this extra arg?
         pub fn getMapVaddr(pd: *ProtectionDomain, mr: *const MemoryRegion) u64 {
-            // TODO: should make sure we don't have a way of giving an invalid vaddr back (e.g on 32-bit systems this is more of a concern)
-
-            // The approach for this is fairly simple and naive, we just loop
-            // over all the maps and find the largest next available address.
-            // We could extend this in the future to actually look for space
-            // between mappings in the case they are not just sorted.
-            // TODO: fix this
             const page_size = MemoryRegion.PageSize.optimal(.aarch64, mr.size).toInt(.aarch64);
             var next_vaddr: u64 = 0x20_000_000;
-            for (pd.maps.items) |map| {
+            for (pd.maps_reserved.items) |map| {
                 if (map.vaddr >= next_vaddr) {
                     next_vaddr = map.vaddr + map.mr.size;
-                    // TODO: Use builtins like @rem
                     const diff = next_vaddr % page_size;
                     if (diff != 0) {
-                        // In the case the next virtual address is not page aligned, we need
-                        // to increase it further.
                         next_vaddr += page_size - diff;
                     }
                 }
             }
-
-            // const padding: u64 = switch (page_size) {
-            //     0x1000 => 0x1000,
-            //     0x200_000 => 0x200_000,
-            //     else => @panic("TODO"),
-            // };
-
             return next_vaddr;
         }
 

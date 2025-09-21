@@ -986,6 +986,11 @@ pub const Serial = struct {
     }
 
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool) void {
+        var acrs = AcRs.create(system.allocator, client, 0);
+        // id is local to a protection domain
+        acrs.id = client.allocateId(null) catch {
+            @panic("failed to allocate id");
+        };
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -994,9 +999,14 @@ pub const Serial = struct {
         server.addMap(queue_mr_server_map);
         server_conn.queue = .createFromMap(queue_mr_server_map);
 
-        const queue_mr_client_map = Map.create(queue_mr, client.getMapVaddr(&queue_mr), .rw, .{});
+        const queue_mr_client_vaddr = client.getMapVaddr(&queue_mr);
+        const queue_mr_client_map = Map.create(queue_mr, queue_mr_client_vaddr, .rw, .{});
         client_conn.queue = .createFromMap(queue_mr_client_map);
-
+        if (!optional) {
+            client.addMap(queue_mr_client_map);
+        } else {
+            acrs.addMap(queue_mr_client_map);
+        }
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.device.name, server.name, client.name });
         const data_mr = Mr.create(system.allocator, data_mr_name, system.data_size, .{});
         system.sdf.addMemoryRegion(data_mr);
@@ -1006,30 +1016,24 @@ pub const Serial = struct {
         server.addMap(data_mr_server_map);
         server_conn.data = .createFromMap(data_mr_server_map);
 
-        const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
+        const data_mr_client_vaddr = client.getMapVaddr(&data_mr);
+        const data_mr_client_map = Map.create(data_mr, data_mr_client_vaddr, .rw, .{});
         client_conn.data = .createFromMap(data_mr_client_map);
-
+        if (!optional) {
+            client.addMap(data_mr_client_map);
+        } else {
+            acrs.addMap(data_mr_client_map);
+        }
         const channel = Channel.create(server, client, .{}) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
+        acrs.addChannel(client_conn.id);
 
         if (optional) {
-            var acrs = AcRs.create(system.allocator, client, 0);
-            // id is local to a protection domain
-            acrs.id = client.allocateId(null) catch {
-                @panic("failed to allocate id");
-            };
-            // add connections
-            acrs.addMap(queue_mr_client_map);
-            acrs.addMap(data_mr_client_map);
-            // add channels
-            acrs.addChannel(client_conn.id);
-
             client.addACRS(acrs);
         } else {
-            client.addMap(queue_mr_client_map);
-            client.addMap(data_mr_client_map);
+            acrs.destroy();
         }
     }
 
