@@ -809,6 +809,7 @@ pub const SystemDescription = struct {
         pd_a_notify: ?bool,
         pd_b_notify: ?bool,
         pp: ?End,
+        optional: ?bool,
 
         pub const End = enum { a, b };
 
@@ -818,6 +819,7 @@ pub const SystemDescription = struct {
             pp: ?End = null,
             pd_a_id: ?u8 = null,
             pd_b_id: ?u8 = null,
+            optional: ?bool = null,
         };
 
         pub fn create(pd_a: *ProtectionDomain, pd_b: *ProtectionDomain, options: Options) !Channel {
@@ -834,6 +836,7 @@ pub const SystemDescription = struct {
                 .pd_a_notify = options.pd_a_notify,
                 .pd_b_notify = options.pd_b_notify,
                 .pp = options.pp,
+                .optional = options.optional,
             };
         }
 
@@ -843,7 +846,14 @@ pub const SystemDescription = struct {
             const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
             defer allocator.free(child_separator);
 
-            try std.fmt.format(writer, "{s}<channel>\n{s}<end pd=\"{s}\" id=\"{}\"", .{ separator, child_separator, ch.pd_a.name, ch.pd_a_id });
+            try std.fmt.format(writer, "{s}<channel", .{separator});
+            if (ch.optional) |optional| {
+                if (optional) {
+                    try std.fmt.format(writer, " optional=\"true\"", .{});
+                }
+            }
+            try std.fmt.format(writer, ">\n", .{});
+            try std.fmt.format(writer, "{s}<end pd=\"{s}\" id=\"{}\"", .{ child_separator, ch.pd_a.name, ch.pd_a_id });
 
             if (ch.pd_a_notify) |notify| {
                 try std.fmt.format(writer, " notify=\"{}\"", .{notify});

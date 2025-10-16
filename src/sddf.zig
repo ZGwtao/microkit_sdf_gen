@@ -1044,7 +1044,7 @@ pub const Serial = struct {
         if (optional) {
             acrs.addMap(data_mr_client_map);
         }
-        const channel = Channel.create(server, client, .{}) catch unreachable;
+        const channel = Channel.create(server, client, .{ .optional = optional }) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
