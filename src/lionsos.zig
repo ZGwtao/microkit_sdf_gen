@@ -123,7 +123,12 @@ pub const FileSystem = struct {
             if (system.data_mr) |data_mr| {
                 break :blk data_mr;
             } else {
-                const mr = Mr.create(allocator, fmt(allocator, "fs_{s}_share", .{fs.name}), system.data_size, .{});
+                const mr = Mr.create(
+                    allocator,
+                    fmt(allocator, "fs_{s}_share", .{fs.name}),
+                    system.data_size,
+                    .{ .page_size = .large },
+                );
                 system.sdf.addMemoryRegion(mr);
                 break :blk mr;
             }
