@@ -479,8 +479,10 @@ pub const SystemDescription = struct {
             channels: ArrayList(u8),
             ///
             name: []const u8,
+            ///
+            grp_type: ?u8,
 
-            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u8, name: []const u8) AccessRightsDomain {
+            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u32, name: []const u8, grp_type: u8) AccessRightsDomain {
                 return AccessRightsDomain{
                     .allocator = allocator,
                     .maps = ArrayList(Map).init(allocator),
@@ -489,6 +491,7 @@ pub const SystemDescription = struct {
                     .id = id,
                     .channels = ArrayList(u8).init(allocator),
                     .name = allocator.dupe(u8, name) catch @panic("Could not dupe acgroup name"),
+                    .grp_type = grp_type,
                 };
             }
 
@@ -528,6 +531,7 @@ pub const SystemDescription = struct {
                 if (id) |id_val| {
                     try std.fmt.format(writer, " gid=\"{}\"", .{id_val});
                 }
+                try std.fmt.format(writer, " grp_type=\"{?}\"", .{acrs.grp_type});
                 _ = try writer.write(">\n");
                 const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
                 defer sdf.allocator.free(child_separator);

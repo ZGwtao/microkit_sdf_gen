@@ -42,7 +42,7 @@ void *sdfgen_add_mr(void *sdf, void *mr);
 void *sdfgen_add_channel(void *sdf, void *ch);
 
 /* access rights domains */
-void *sdfgen_acrs_create(void *pd, uint8_t id, char *name);
+void *sdfgen_acrs_create(void *pd, uint32_t id, char *name, uint8_t gtype);
 void sdfgen_acrs_destroy(void *acrs);
 
 void sdfgen_acrs_add_map(void *acrs, void *map);

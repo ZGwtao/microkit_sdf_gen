@@ -391,7 +391,13 @@ pub const Timer = struct {
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
             if (system.client_optionals.items[i]) {
-                var acrs = AcRs.create(system.allocator, client, 0, "dummy_name");
+                var acrs = AcRs.create(
+                    system.allocator,
+                    client,
+                    0,
+                    fmt(system.allocator, "timer/{s}/acgrp", .{client.name}),
+                    0x3,
+                );
                 // id is local to a protection domain
                 acrs.id = client.allocateAcgrpId(null) catch {
                     @panic("failed to allocate id");
@@ -1003,13 +1009,6 @@ pub const Serial = struct {
     }
 
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool, acrs: *Pd.AccessRightsDomain) void {
-        //var acrs = AcRs.create(system.allocator, client, 0, fmt(system.allocator, "serial/{s}/acgrp", .{client.name}));
-        //if (optional) {
-        //    // id is local to a protection domain
-        //    acrs.id = client.allocateAcgrpId(null) catch {
-        //        @panic("failed to allocate id");
-        //    };
-        //}
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -1052,12 +1051,6 @@ pub const Serial = struct {
         if (optional) {
             acrs.addChannel(client_conn.id);
         }
-
-        //if (optional) {
-        //    client.addACRS(acrs);
-        //} else {
-        //    acrs.destroy();
-        //}
     }
 
     pub fn connect(system: *Serial) !void {
@@ -1108,7 +1101,13 @@ pub const Serial = struct {
             assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
             assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
 
-            var a = AcRs.create(system.allocator, client, 0, fmt(system.allocator, "serial/{s}/acgrp", .{client.name}));
+            var a = AcRs.create(
+                system.allocator,
+                client,
+                0,
+                fmt(system.allocator, "serial/{s}/acgrp", .{client.name}),
+                0x1,
+            );
             system.createConnection(
                 system.virt_rx.?,
                 client,

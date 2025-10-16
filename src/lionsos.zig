@@ -100,7 +100,13 @@ pub const FileSystem = struct {
         const fs = system.fs;
         const client = system.client;
 
-        var acrs = AcRs.create(allocator, client, 0, "dummy_name");
+        var acrs = AcRs.create(
+            allocator,
+            client,
+            0,
+            fmt(allocator, "fatfs/{s}/acgrp", .{client.name}),
+            0x0,
+        );
         if ((options.optional orelse false)) {
             // id is local to a protection domain
             acrs.id = client.allocateAcgrpId(null) catch {

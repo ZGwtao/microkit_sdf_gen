@@ -122,7 +122,7 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
     blob.deinit(allocator);
 }
 
-export fn sdfgen_acrs_create(c_pd: *align(8) anyopaque, id: u8, name: [*c]u8) *anyopaque {
+export fn sdfgen_acrs_create(c_pd: *align(8) anyopaque, id: u32, name: [*c]u8, grp_type: u8) *anyopaque {
     const acrs = allocator.create(AcRs) catch @panic("OOM");
     const name_slice = std.mem.span(name);
     const pd: *Pd = @ptrCast(c_pd);
@@ -131,6 +131,7 @@ export fn sdfgen_acrs_create(c_pd: *align(8) anyopaque, id: u8, name: [*c]u8) *a
         pd,
         id,
         name_slice,
+        grp_type,
     );
     return acrs;
 }
