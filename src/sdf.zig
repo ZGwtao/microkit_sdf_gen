@@ -204,10 +204,12 @@ pub const SystemDescription = struct {
         perms: Perms,
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
+        optional: ?bool,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
+            optional: ?bool = null,
         };
 
         pub const Perms = packed struct {
@@ -289,6 +291,7 @@ pub const SystemDescription = struct {
                 .perms = perms,
                 .cached = options.cached,
                 .setvar_vaddr = options.setvar_vaddr,
+                .optional = options.optional,
             };
         }
 
@@ -304,6 +307,11 @@ pub const SystemDescription = struct {
             if (map.cached) |cached| {
                 const cached_str = if (cached) "true" else "false";
                 try std.fmt.format(writer, " cached=\"{s}\"", .{cached_str});
+            }
+
+            if (map.optional) |optional| {
+                const op_str = if (optional) "true" else "false";
+                try std.fmt.format(writer, " optional=\"{s}\"", .{op_str});
             }
 
             _ = try writer.write(" />\n");
@@ -417,6 +425,8 @@ pub const SystemDescription = struct {
         vm: ?*VirtualMachine,
         /// Keeping track of what IDs are available for channels, IRQs, etc
         ids: std.bit_set.StaticBitSet(MAX_IDS),
+        /// FIXME: is 128 a good number?
+        acgroup_ids: std.bit_set.StaticBitSet(MAX_ACGRP_IDS),
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
         /// If this PD is a child of another PD, this ID identifies it to its parent PD
@@ -436,6 +446,7 @@ pub const SystemDescription = struct {
 
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
+        const MAX_ACGRP_IDS: u32 = 128;
         const MAX_IRQS: u8 = MAX_IDS;
         const MAX_CHILD_PDS: u8 = MAX_IDS;
         const MAX_ACRS_DMS: u8 = MAX_IDS;
@@ -463,11 +474,13 @@ pub const SystemDescription = struct {
             /// PD id to its parent PD
             ppd: *ProtectionDomain,
             /// acrs id
-            id: ?u8,
+            id: ?u32,
             /// Channel endpoint IDs
             channels: ArrayList(u8),
+            ///
+            name: []const u8,
 
-            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u8) AccessRightsDomain {
+            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u8, name: []const u8) AccessRightsDomain {
                 return AccessRightsDomain{
                     .allocator = allocator,
                     .maps = ArrayList(Map).init(allocator),
@@ -475,6 +488,7 @@ pub const SystemDescription = struct {
                     .ppd = ppd,
                     .id = id,
                     .channels = ArrayList(u8).init(allocator),
+                    .name = allocator.dupe(u8, name) catch @panic("Could not dupe acgroup name"),
                 };
             }
 
@@ -482,6 +496,7 @@ pub const SystemDescription = struct {
                 acrs.maps.deinit();
                 acrs.irqs.deinit();
                 acrs.channels.deinit();
+                acrs.allocator.free(acrs.name);
             }
 
             pub fn addMap(acrs: *AccessRightsDomain, map: Map) void {
@@ -508,10 +523,10 @@ pub const SystemDescription = struct {
                 acrs.channels.append(end_id) catch @panic("Could not add channel to AccessRightsDomain");
             }
 
-            pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u8) !void {
-                try std.fmt.format(writer, "{s}<access_rights_domain", .{separator});
+            pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
+                try std.fmt.format(writer, "{s}<acgroup name=\"{s}\"", .{ separator, acrs.name });
                 if (id) |id_val| {
-                    try std.fmt.format(writer, " id=\"{}\"", .{id_val});
+                    try std.fmt.format(writer, " gid=\"{}\"", .{id_val});
                 }
                 _ = try writer.write(">\n");
                 const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
@@ -525,7 +540,7 @@ pub const SystemDescription = struct {
                 for (acrs.channels.items) |cid| {
                     try std.fmt.format(writer, "{s}<channel_end id=\"{}\"/>\n", .{ child_separator, cid });
                 }
-                try std.fmt.format(writer, "{s}</access_rights_domain>\n", .{separator});
+                try std.fmt.format(writer, "{s}</acgroup>\n", .{separator});
             }
         };
 
@@ -542,6 +557,7 @@ pub const SystemDescription = struct {
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .vm = null,
                 .ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
+                .acgroup_ids = std.bit_set.StaticBitSet(MAX_ACGRP_IDS).initEmpty(),
                 .setvars = ArrayList(SetVar).init(allocator),
                 .priority = options.priority,
                 .passive = options.passive,
@@ -598,6 +614,26 @@ pub const SystemDescription = struct {
                     }
                 }
 
+                return error.NoMoreIds;
+            }
+        }
+
+        pub fn allocateAcgrpId(pd: *ProtectionDomain, id: ?u32) !u32 {
+            if (id) |chosen_id| {
+                if (pd.acgroup_ids.isSet(chosen_id)) {
+                    log.err("attempting to allocate acgrp id '{}' in PD '{s}'", .{ chosen_id, pd.name });
+                    return error.AlreadyAllocatedId;
+                } else {
+                    pd.acgroup_ids.setValue(chosen_id, true);
+                    return chosen_id;
+                }
+            } else {
+                for (0..MAX_ACGRP_IDS) |i| {
+                    if (!pd.acgroup_ids.isSet(i)) {
+                        pd.acgroup_ids.setValue(i, true);
+                        return @intCast(i);
+                    }
+                }
                 return error.NoMoreIds;
             }
         }

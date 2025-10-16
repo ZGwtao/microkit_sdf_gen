@@ -100,10 +100,10 @@ pub const FileSystem = struct {
         const fs = system.fs;
         const client = system.client;
 
-        var acrs = AcRs.create(allocator, client, 0);
+        var acrs = AcRs.create(allocator, client, 0, "dummy_name");
         if ((options.optional orelse false)) {
             // id is local to a protection domain
-            acrs.id = client.allocateId(null) catch {
+            acrs.id = client.allocateAcgrpId(null) catch {
                 @panic("failed to allocate id");
             };
         }
@@ -135,7 +135,7 @@ pub const FileSystem = struct {
         system.server_config.client.share = .createFromMap(server_share_map);
         createMapping(fs, server_share_map);
 
-        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
+        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached, .optional = options.optional });
         if (!(options.optional orelse false)) {
             system.client.addMap(client_command_map);
         } else {
@@ -143,7 +143,7 @@ pub const FileSystem = struct {
         }
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
-        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
+        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached, .optional = options.optional });
         if (!(options.optional orelse false)) {
             system.client.addMap(client_completion_map);
         } else {
@@ -151,7 +151,7 @@ pub const FileSystem = struct {
         }
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
-        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
+        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached, .optional = options.optional });
         if (!(options.optional orelse false)) {
             system.client.addMap(client_share_map);
         } else {

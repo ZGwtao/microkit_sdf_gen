@@ -391,9 +391,9 @@ pub const Timer = struct {
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
             if (system.client_optionals.items[i]) {
-                var acrs = AcRs.create(system.allocator, client, 0);
+                var acrs = AcRs.create(system.allocator, client, 0, "dummy_name");
                 // id is local to a protection domain
-                acrs.id = client.allocateId(null) catch {
+                acrs.id = client.allocateAcgrpId(null) catch {
                     @panic("failed to allocate id");
                 };
                 acrs.addChannel(system.client_configs.items[i].driver_id);
@@ -1002,14 +1002,14 @@ pub const Serial = struct {
         return system.virt_rx != null;
     }
 
-    fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool) void {
-        var acrs = AcRs.create(system.allocator, client, 0);
-        if (optional) {
-            // id is local to a protection domain
-            acrs.id = client.allocateId(null) catch {
-                @panic("failed to allocate id");
-            };
-        }
+    fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool, acrs: *Pd.AccessRightsDomain) void {
+        //var acrs = AcRs.create(system.allocator, client, 0, fmt(system.allocator, "serial/{s}/acgrp", .{client.name}));
+        //if (optional) {
+        //    // id is local to a protection domain
+        //    acrs.id = client.allocateAcgrpId(null) catch {
+        //        @panic("failed to allocate id");
+        //    };
+        //}
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -1019,7 +1019,7 @@ pub const Serial = struct {
         server_conn.queue = .createFromMap(queue_mr_server_map);
 
         const queue_mr_client_vaddr = client.getMapVaddr(&queue_mr);
-        const queue_mr_client_map = Map.create(queue_mr, queue_mr_client_vaddr, .rw, .{});
+        const queue_mr_client_map = Map.create(queue_mr, queue_mr_client_vaddr, .rw, .{ .optional = optional });
         client_conn.queue = .createFromMap(queue_mr_client_map);
         if (!optional) {
             client.addMap(queue_mr_client_map);
@@ -1037,7 +1037,7 @@ pub const Serial = struct {
         server_conn.data = .createFromMap(data_mr_server_map);
 
         const data_mr_client_vaddr = client.getMapVaddr(&data_mr);
-        const data_mr_client_map = Map.create(data_mr, data_mr_client_vaddr, .rw, .{});
+        const data_mr_client_map = Map.create(data_mr, data_mr_client_vaddr, .rw, .{ .optional = optional });
         client_conn.data = .createFromMap(data_mr_client_map);
         if (!optional) {
             client.addMap(data_mr_client_map);
@@ -1053,11 +1053,11 @@ pub const Serial = struct {
             acrs.addChannel(client_conn.id);
         }
 
-        if (optional) {
-            client.addACRS(acrs);
-        } else {
-            acrs.destroy();
-        }
+        //if (optional) {
+        //    client.addACRS(acrs);
+        //} else {
+        //    acrs.destroy();
+        //}
     }
 
     pub fn connect(system: *Serial) !void {
@@ -1066,13 +1066,16 @@ pub const Serial = struct {
         system.driver_config.default_baud = 115200;
 
         if (system.hasRx()) {
-            system.createConnection(system.driver, system.virt_rx.?, &system.driver_config.rx, &system.virt_rx_config.driver, false);
+            system.createConnection(
+                system.driver,
+                system.virt_rx.?,
+                &system.driver_config.rx,
+                &system.virt_rx_config.driver,
+                false,
+                @as(*Pd.AccessRightsDomain, undefined),
+            );
 
             system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
-            for (system.clients.items, 0..) |client, i| {
-                system.createConnection(system.virt_rx.?, client, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, system.client_optionals.items[i]);
-            }
-
             system.driver_config.rx_enabled = 1;
 
             system.virt_rx_config.switch_char = 28;
@@ -1081,18 +1084,16 @@ pub const Serial = struct {
             system.virt_tx_config.enable_rx = 1;
         }
 
-        system.createConnection(system.driver, system.virt_tx, &system.driver_config.tx, &system.virt_tx_config.driver, false);
+        system.createConnection(
+            system.driver,
+            system.virt_tx,
+            &system.driver_config.tx,
+            &system.virt_tx_config.driver,
+            false,
+            @as(*Pd.AccessRightsDomain, undefined),
+        );
 
         system.virt_tx_config.num_clients = @intCast(system.clients.items.len);
-        for (system.clients.items, 0..) |client, i| {
-            // assuming name is null-terminated
-            @memcpy(system.virt_tx_config.clients[i].name[0..client.name.len], client.name);
-            assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
-            assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
-
-            system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, system.client_optionals.items[i]);
-        }
-
         system.virt_tx_config.enable_colour = @intFromBool(system.enable_color);
 
         const begin_str = "Begin input\n";
@@ -1100,6 +1101,41 @@ pub const Serial = struct {
         assert(system.virt_tx_config.begin_str[begin_str.len] == 0);
 
         system.virt_tx_config.begin_str_len = begin_str.len;
+
+        for (system.clients.items, 0..) |client, i| {
+            // assuming name is null-terminated
+            @memcpy(system.virt_tx_config.clients[i].name[0..client.name.len], client.name);
+            assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
+            assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
+
+            var a = AcRs.create(system.allocator, client, 0, fmt(system.allocator, "serial/{s}/acgrp", .{client.name}));
+            system.createConnection(
+                system.virt_rx.?,
+                client,
+                &system.virt_rx_config.clients[i],
+                &system.client_configs.items[i].rx,
+                system.client_optionals.items[i],
+                &a,
+            );
+
+            system.createConnection(
+                system.virt_tx,
+                client,
+                &system.virt_tx_config.clients[i].conn,
+                &system.client_configs.items[i].tx,
+                system.client_optionals.items[i],
+                &a,
+            );
+
+            if (system.client_optionals.items[i]) {
+                a.id = client.allocateAcgrpId(null) catch {
+                    @panic("Failed to allocate ID for acgroup");
+                };
+                client.addACRS(a);
+            } else {
+                a.destroy();
+            }
+        }
 
         system.connected = true;
     }
