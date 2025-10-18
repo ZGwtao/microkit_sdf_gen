@@ -387,6 +387,7 @@ pub const Timer = struct {
                 .pp = .b,
                 // Client does not need to notify driver
                 .pd_b_notify = false,
+                .optional = system.client_optionals.items[i],
             }) catch unreachable;
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
