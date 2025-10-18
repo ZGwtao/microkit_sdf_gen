@@ -477,7 +477,9 @@ pub const SystemDescription = struct {
             id: ?u32,
             /// Channel endpoint IDs
             channels: ArrayList(u8),
-            ///
+            /// serialised data (output)
+            data_name: ?[]const u8,
+            /// (unused for now...)
             name: []const u8,
             ///
             grp_type: ?u8,
@@ -491,6 +493,7 @@ pub const SystemDescription = struct {
                     .id = id,
                     .channels = ArrayList(u8).init(allocator),
                     .name = allocator.dupe(u8, name) catch @panic("Could not dupe acgroup name"),
+                    .data_name = null,
                     .grp_type = grp_type,
                 };
             }
@@ -500,6 +503,13 @@ pub const SystemDescription = struct {
                 acrs.irqs.deinit();
                 acrs.channels.deinit();
                 acrs.allocator.free(acrs.name);
+                if (acrs.data_name) |buf| { // idiomatic optional test
+                    acrs.allocator.free(buf);
+                }
+            }
+
+            pub fn addDataName(acrs: *AccessRightsDomain, data_name: []const u8) void {
+                acrs.data_name = acrs.allocator.dupe(u8, data_name) catch @panic("Could not dupe acgroup data name");
             }
 
             pub fn addMap(acrs: *AccessRightsDomain, map: Map) void {
@@ -530,6 +540,9 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, "{s}<acgroup name=\"{s}\"", .{ separator, acrs.name });
                 if (id) |id_val| {
                     try std.fmt.format(writer, " gid=\"{}\"", .{id_val});
+                }
+                if (acrs.data_name) |buf| {
+                    try std.fmt.format(writer, " data_path=\"{s}\"", .{buf});
                 }
                 try std.fmt.format(writer, " grp_type=\"{?}\"", .{acrs.grp_type});
                 _ = try writer.write(">\n");

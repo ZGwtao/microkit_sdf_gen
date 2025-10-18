@@ -403,6 +403,7 @@ pub const Timer = struct {
                     @panic("failed to allocate id");
                 };
                 acrs.addChannel(system.client_configs.items[i].driver_id);
+                acrs.addDataName(fmt(system.allocator, "timer_client_{s}.data", .{client.name}));
                 client.addACRS(acrs);
             }
         }
@@ -1130,6 +1131,7 @@ pub const Serial = struct {
                 a.id = client.allocateAcgrpId(null) catch {
                     @panic("Failed to allocate ID for acgroup");
                 };
+                a.addDataName(fmt(system.allocator, "serial_client_{s}.data", .{client.name}));
                 client.addACRS(a);
             } else {
                 a.destroy();

@@ -183,6 +183,7 @@ pub const FileSystem = struct {
         }
 
         if (optional) {
+            acrs.addDataName(fmt(allocator, "fs_client_{s}.data", .{system.client.name}));
             client.addACRS(acrs);
         } else {
             acrs.destroy();
