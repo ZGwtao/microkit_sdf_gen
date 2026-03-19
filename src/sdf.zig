@@ -426,7 +426,7 @@ pub const SystemDescription = struct {
         /// Keeping track of what IDs are available for channels, IRQs, etc
         ids: std.bit_set.StaticBitSet(MAX_IDS),
         /// FIXME: is 128 a good number?
-        acgroup_ids: std.bit_set.StaticBitSet(MAX_ACGRP_IDS),
+        svc_id: std.bit_set.StaticBitSet(MAX_SVC_IDS),
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
         /// If this PD is a child of another PD, this ID identifies it to its parent PD
@@ -437,19 +437,19 @@ pub const SystemDescription = struct {
         is_monitor: ?bool,
         /// late_loading feature
         late_ld: ?bool,
-        /// Access Rights Domains for a PD
-        acrs_domains: ArrayList(AccessRightsDomain),
-        /// >
+        /// OS services for a PD
+        os_services: ArrayList(OSSvc),
+        /// Set variables for a PD
         setvars: ArrayList(SetVar),
-        /// > this is the real list, containing those not for non-optional mappings...
+        /// Reserved memory mappings for a PD
         maps_reserved: ArrayList(Map),
 
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
-        const MAX_ACGRP_IDS: u32 = 128;
+        const MAX_SVC_IDS: u32 = 128;
         const MAX_IRQS: u8 = MAX_IDS;
         const MAX_CHILD_PDS: u8 = MAX_IDS;
-        const MAX_ACRS_DMS: u8 = MAX_IDS;
+        const MAX_OS_SERVICES: u8 = MAX_IDS;
 
         pub const DEFAULT_PRIORITY: u8 = 100;
 
@@ -465,7 +465,7 @@ pub const SystemDescription = struct {
             late_ld: ?bool = null,
         };
 
-        pub const AccessRightsDomain: type = struct {
+        pub const OSSvc: type = struct {
             allocator: Allocator,
             /// Memory mappings
             maps: ArrayList(Map),
@@ -473,88 +473,88 @@ pub const SystemDescription = struct {
             irqs: ArrayList(Irq),
             /// PD id to its parent PD
             ppd: *ProtectionDomain,
-            /// acrs id
+            /// ossvc id
             id: ?u32,
             /// Channel endpoint IDs
             channels: ArrayList(u8),
             /// serialised data (output)
             data_name: ?[]const u8,
             /// (unused for now...)
-            name: []const u8,
+            svc_name: []const u8,
             ///
-            grp_type: ?u8,
+            svc_type: ?u8,
 
-            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u32, name: []const u8, grp_type: u8) AccessRightsDomain {
-                return AccessRightsDomain{
+            pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u32, name: []const u8, svc_type: u8) OSSvc {
+                return OSSvc{
                     .allocator = allocator,
                     .maps = ArrayList(Map).init(allocator),
                     .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                     .ppd = ppd,
                     .id = id,
                     .channels = ArrayList(u8).init(allocator),
-                    .name = allocator.dupe(u8, name) catch @panic("Could not dupe acgroup name"),
+                    .svc_name = allocator.dupe(u8, name) catch @panic("Could not dupe ossvc name"),
                     .data_name = null,
-                    .grp_type = grp_type,
+                    .svc_type = svc_type,
                 };
             }
 
-            pub fn destroy(acrs: *AccessRightsDomain) void {
-                acrs.maps.deinit();
-                acrs.irqs.deinit();
-                acrs.channels.deinit();
-                acrs.allocator.free(acrs.name);
-                if (acrs.data_name) |buf| { // idiomatic optional test
-                    acrs.allocator.free(buf);
+            pub fn destroy(ossvc: *OSSvc) void {
+                ossvc.maps.deinit();
+                ossvc.irqs.deinit();
+                ossvc.channels.deinit();
+                ossvc.allocator.free(ossvc.svc_name);
+                if (ossvc.data_name) |buf| { // idiomatic optional test
+                    ossvc.allocator.free(buf);
                 }
             }
 
-            pub fn addDataName(acrs: *AccessRightsDomain, data_name: []const u8) void {
-                acrs.data_name = acrs.allocator.dupe(u8, data_name) catch @panic("Could not dupe acgroup data name");
+            pub fn addDataName(ossvc: *OSSvc, data_name: []const u8) void {
+                ossvc.data_name = ossvc.allocator.dupe(u8, data_name) catch @panic("Could not dupe ossvc data name");
             }
 
-            pub fn addMap(acrs: *AccessRightsDomain, map: Map) void {
-                acrs.ppd.addMapReserved(map);
-                acrs.maps.append(map) catch @panic("Could not add Map to ACRS");
+            pub fn addMap(ossvc: *OSSvc, map: Map) void {
+                ossvc.ppd.addMapReserved(map);
+                ossvc.maps.append(map) catch @panic("Could not add Map to OSSvc");
             }
 
-            pub fn addIrq(acrs: *AccessRightsDomain, irq: Irq) !u8 {
+            pub fn addIrq(ossvc: *OSSvc, irq: Irq) !u8 {
                 // If the IRQ ID is already set, then we check that we can allocate it with
                 // the PD.
                 if (irq.id) |id| {
-                    _ = try acrs.ppd.allocateId(id);
-                    try acrs.irqs.append(irq);
+                    _ = try ossvc.ppd.allocateId(id);
+                    try ossvc.irqs.append(irq);
                     return id;
                 } else {
                     var irq_with_id = irq;
-                    irq_with_id.id = try acrs.ppd.allocateId(null);
-                    try acrs.irqs.append(irq_with_id);
+                    irq_with_id.id = try ossvc.ppd.allocateId(null);
+                    try ossvc.irqs.append(irq_with_id);
                     return irq_with_id.id.?;
                 }
             }
 
-            pub fn addChannel(acrs: *AccessRightsDomain, end_id: u8) void {
-                acrs.channels.append(end_id) catch @panic("Could not add channel to AccessRightsDomain");
+            pub fn addChannel(ossvc: *OSSvc, end_id: u8) void {
+                ossvc.channels.append(end_id) catch @panic("Could not add channel to OSSvc");
             }
 
-            pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
-                try std.fmt.format(writer, "{s}<os_service name=\"{s}\"", .{ separator, acrs.name });
+            pub fn render(ossvc: *const OSSvc, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
+                try std.fmt.format(writer, "{s}<os_service name=\"{s}\"", .{ separator, ossvc.svc_name });
                 if (id) |id_val| {
                     try std.fmt.format(writer, " svc_id=\"{}\"", .{id_val});
                 }
-                if (acrs.data_name) |buf| {
+                if (ossvc.data_name) |buf| {
                     try std.fmt.format(writer, " data_path=\"{s}\"", .{buf});
                 }
-                try std.fmt.format(writer, " svc_type=\"{?}\"", .{acrs.grp_type});
+                try std.fmt.format(writer, " svc_type=\"{?}\"", .{ossvc.svc_type});
                 _ = try writer.write(">\n");
                 const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
                 defer sdf.allocator.free(child_separator);
-                for (acrs.maps.items) |map| {
+                for (ossvc.maps.items) |map| {
                     try map.render(writer, child_separator);
                 }
-                for (acrs.irqs.items) |irq| {
+                for (ossvc.irqs.items) |irq| {
                     try irq.render(writer, child_separator);
                 }
-                for (acrs.channels.items) |cid| {
+                for (ossvc.channels.items) |cid| {
                     try std.fmt.format(writer, "{s}<channel_end id=\"{}\"/>\n", .{ child_separator, cid });
                 }
                 try std.fmt.format(writer, "{s}</os_service>\n", .{separator});
@@ -574,7 +574,7 @@ pub const SystemDescription = struct {
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .vm = null,
                 .ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
-                .acgroup_ids = std.bit_set.StaticBitSet(MAX_ACGRP_IDS).initEmpty(),
+                .svc_id = std.bit_set.StaticBitSet(MAX_SVC_IDS).initEmpty(),
                 .setvars = ArrayList(SetVar).init(allocator),
                 .priority = options.priority,
                 .passive = options.passive,
@@ -586,7 +586,7 @@ pub const SystemDescription = struct {
                 .cpu = options.cpu,
                 .is_monitor = options.is_monitor,
                 .late_ld = options.late_ld,
-                .acrs_domains = ArrayList(AccessRightsDomain).initCapacity(allocator, MAX_ACRS_DMS) catch @panic("Could not allocate acrs"),
+                .os_services = ArrayList(OSSvc).initCapacity(allocator, MAX_OS_SERVICES) catch @panic("Could not allocate os_services"),
             };
         }
 
@@ -605,7 +605,7 @@ pub const SystemDescription = struct {
                 vm.destroy();
             }
             pd.irqs.deinit();
-            pd.acrs_domains.deinit();
+            pd.os_services.deinit();
         }
 
         /// There may be times where PD resources with an ID, such as a channel
@@ -635,19 +635,19 @@ pub const SystemDescription = struct {
             }
         }
 
-        pub fn allocateAcgrpId(pd: *ProtectionDomain, id: ?u32) !u32 {
+        pub fn allocateSvcId(pd: *ProtectionDomain, id: ?u32) !u32 {
             if (id) |chosen_id| {
-                if (pd.acgroup_ids.isSet(chosen_id)) {
-                    log.err("attempting to allocate acgrp id '{}' in PD '{s}'", .{ chosen_id, pd.name });
+                if (pd.svc_id.isSet(chosen_id)) {
+                    log.err("attempting to allocate svc id '{}' in PD '{s}'", .{ chosen_id, pd.name });
                     return error.AlreadyAllocatedId;
                 } else {
-                    pd.acgroup_ids.setValue(chosen_id, true);
+                    pd.svc_id.setValue(chosen_id, true);
                     return chosen_id;
                 }
             } else {
-                for (0..MAX_ACGRP_IDS) |i| {
-                    if (!pd.acgroup_ids.isSet(i)) {
-                        pd.acgroup_ids.setValue(i, true);
+                for (0..MAX_SVC_IDS) |i| {
+                    if (!pd.svc_id.isSet(i)) {
+                        pd.svc_id.setValue(i, true);
                         return @intCast(i);
                     }
                 }
@@ -706,11 +706,11 @@ pub const SystemDescription = struct {
             return child.child_id.?;
         }
 
-        pub fn addACRS(pd: *ProtectionDomain, acrs: AccessRightsDomain) void {
-            if (pd.acrs_domains.items.len == MAX_ACRS_DMS) {
+        pub fn addOSService(pd: *ProtectionDomain, ossvc: OSSvc) void {
+            if (pd.os_services.items.len == MAX_OS_SERVICES) {
                 return;
             }
-            pd.acrs_domains.appendAssumeCapacity(acrs);
+            pd.os_services.appendAssumeCapacity(ossvc);
         }
 
         pub fn getMapVaddr(pd: *ProtectionDomain, mr: *const MemoryRegion) u64 {
@@ -800,8 +800,8 @@ pub const SystemDescription = struct {
             for (pd.setvars.items) |setvar| {
                 try setvar.render(writer, child_separator);
             }
-            for (pd.acrs_domains.items) |acrs| {
-                try acrs.render(sdf, writer, child_separator, acrs.id);
+            for (pd.os_services.items) |ossvc| {
+                try ossvc.render(sdf, writer, child_separator, ossvc.id);
             }
 
             if (pd.is_monitor) |is_monitor| {

@@ -21,7 +21,7 @@ const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Arch = SystemDescription.Arch;
-const AcRs: type = Pd.AccessRightsDomain;
+const OSSvc = Pd.OSSvc;
 
 // TODO: handle passing options to sDDF systems
 
@@ -122,37 +122,37 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
     blob.deinit(allocator);
 }
 
-export fn sdfgen_acrs_create(c_pd: *align(8) anyopaque, id: u32, name: [*c]u8, grp_type: u8) *anyopaque {
-    const acrs = allocator.create(AcRs) catch @panic("OOM");
+export fn sdfgen_ossvc_create(c_pd: *align(8) anyopaque, id: u32, name: [*c]u8, grp_type: u8) *anyopaque {
+    const ossvc = allocator.create(OSSvc) catch @panic("OOM");
     const name_slice = std.mem.span(name);
     const pd: *Pd = @ptrCast(c_pd);
-    acrs.* = AcRs.create(
+    ossvc.* = OSSvc.create(
         allocator,
         pd,
         id,
         name_slice,
         grp_type,
     );
-    return acrs;
+    return ossvc;
 }
 
-export fn sdfgen_acrs_destroy(c_acrs: *align(8) anyopaque) void {
-    const acrs: *AcRs = @ptrCast(c_acrs);
-    allocator.destroy(acrs);
+export fn sdfgen_ossvc_destroy(c_ossvc: *align(8) anyopaque) void {
+    const ossvc: *OSSvc = @ptrCast(c_ossvc);
+    allocator.destroy(ossvc);
 }
 
-export fn sdfgen_acrs_add_map(c_acrs: *align(8) anyopaque, c_map: *align(8) anyopaque) void {
-    const acrs: *AcRs = @ptrCast(c_acrs);
+export fn sdfgen_ossvc_add_map(c_ossvc: *align(8) anyopaque, c_map: *align(8) anyopaque) void {
+    const ossvc: *OSSvc = @ptrCast(c_ossvc);
     const map: *Map = @ptrCast(c_map);
 
-    acrs.addMap(map.*);
+    ossvc.addMap(map.*);
 }
 
-export fn sdfgen_acrs_add_irq(c_acrs: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
-    const acrs: *AcRs = @ptrCast(c_acrs);
+export fn sdfgen_ossvc_add_irq(c_ossvc: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
+    const ossvc: *OSSvc = @ptrCast(c_ossvc);
     const irq: *Irq = @ptrCast(c_irq);
-    const id = acrs.addIrq(irq.*) catch |e| {
-        log.err("failed to add IRQ '{}' to acrs : {}", .{ irq.irq, e });
+    const id = ossvc.addIrq(irq.*) catch |e| {
+        log.err("failed to add IRQ '{}' to ossvc : {}", .{ irq.irq, e });
         return -1;
     };
     return @intCast(id);

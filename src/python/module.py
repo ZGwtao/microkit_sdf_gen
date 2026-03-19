@@ -130,15 +130,15 @@ libsdfgen.sdfgen_pd_add_map.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_irq.restype = c_int8
 libsdfgen.sdfgen_pd_add_irq.argtypes = [c_void_p, c_void_p]
 
-libsdfgen.sdfgen_acrs_create.restype = c_void_p
-libsdfgen.sdfgen_acrs_create.argtypes = [c_void_p, c_uint32, c_char_p, c_uint8]
-libsdfgen.sdfgen_acrs_destroy.restype = None
-libsdfgen.sdfgen_acrs_destroy.argtypes = [c_void_p]
+libsdfgen.sdfgen_ossvc_create.restype = c_void_p
+libsdfgen.sdfgen_ossvc_create.argtypes = [c_void_p, c_uint32, c_char_p, c_uint8]
+libsdfgen.sdfgen_ossvc_destroy.restype = None
+libsdfgen.sdfgen_ossvc_destroy.argtypes = [c_void_p]
 
-libsdfgen.sdfgen_acrs_add_map.restype = None
-libsdfgen.sdfgen_acrs_add_map.argtypes = [c_void_p, c_void_p]
-libsdfgen.sdfgen_acrs_add_irq.restype = c_int8
-libsdfgen.sdfgen_acrs_add_irq.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_ossvc_add_map.restype = None
+libsdfgen.sdfgen_ossvc_add_map.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_ossvc_add_irq.restype = c_int8
+libsdfgen.sdfgen_ossvc_add_irq.argtypes = [c_void_p, c_void_p]
 
 libsdfgen.sdfgen_sddf_timer.restype = c_void_p
 libsdfgen.sdfgen_sddf_timer.argtypes = [c_void_p, c_void_p, c_void_p]
@@ -432,24 +432,24 @@ class SystemDescription:
         X86 = 4,
         X86_64 = 5,
 
-    class AccessRightsDomain:
+    class OSSvc:
         _name: str
         _obj: c_void_p
         _pd: SystemDescription.ProtectionDomain
         _id: int
-        _gtype: int
+        _type: int
 
         def __init__(
             self,
             parent: SystemDescription.ProtectionDomain,
             id: int = 0,
             name: str = "dummy",
-            grp_type: int = 0,
+            svc_type: int = 0,
         ) -> None:
             self._name = name
-            self._gtype = grp_type
+            self._type = svc_type
             c_name = c_char_p(name.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_acrs_create(parent, id, c_name, grp_type)
+            self._obj = libsdfgen.sdfgen_ossvc_create(parent, id, c_name, svc_type)
             self._pd = parent
 
         @property
@@ -457,20 +457,20 @@ class SystemDescription:
             return self._name
 
         def add_map(self, map: SystemDescription.Map):
-            libsdfgen.sdfgen_acrs_add_map(self._obj, map._obj)
+            libsdfgen.sdfgen_ossvc_add_map(self._obj, map._obj)
 
         def add_irq(self, irq: SystemDescription.Irq) -> int:
-            id = libsdfgen.sdfgen_acrs_add_irq(self._obj, irq._obj)
+            id = libsdfgen.sdfgen_ossvc_add_irq(self._obj, irq._obj)
             if id < 0:
-                raise Exception(f"failed to add IRQ to acrsdm '{self.name}'")
+                raise Exception(f"failed to add IRQ to svc '{self.name}'")
 
             return id
 
         def __del__(self):
-            libsdfgen.sdfgen_acrs_destroy(self._obj)
+            libsdfgen.sdfgen_ossvc_destroy(self._obj)
 
         def __repr__(self) -> str:
-            return f"AccessRightsDomain({self.name})"
+            return f"OSService({self.name})"
 
 
     class ProtectionDomain:
@@ -478,7 +478,7 @@ class SystemDescription:
         _obj: c_void_p
         # We need to hold references to the PDs in case they get GC'd.
         _child_pds: List[SystemDescription.ProtectionDomain]
-        _acrs_domains: List[SystemDescription.AccessRightsDomain]
+        _ossvcs: List[SystemDescription.OSSvc]
 
         def __init__(
             self,
@@ -500,7 +500,7 @@ class SystemDescription:
             else:
                 self._obj = libsdfgen.sdfgen_pd_create(c_name, None)
             self._child_pds = []
-            self._acrs_domains = []
+            self._ossvcs = []
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
             if budget is not None:

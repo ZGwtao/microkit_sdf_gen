@@ -41,12 +41,12 @@ void *sdfgen_add_pd(void *sdf, void *pd);
 void *sdfgen_add_mr(void *sdf, void *mr);
 void *sdfgen_add_channel(void *sdf, void *ch);
 
-/* access rights domains */
-void *sdfgen_acrs_create(void *pd, uint32_t id, char *name, uint8_t gtype);
-void sdfgen_acrs_destroy(void *acrs);
+/* os services */
+void *sdfgen_ossvc_create(void *pd, uint32_t id, char *name, uint8_t gtype);
+void sdfgen_ossvc_destroy(void *svc);
 
-void sdfgen_acrs_add_map(void *acrs, void *map);
-int8_t sdfgen_acrs_add_irq(void *acrs, void *irq);
+void sdfgen_ossvc_add_map(void *svc, void *map);
+int8_t sdfgen_ossvc_add_irq(void *svc, void *irq);
 
 
 void *sdfgen_pd_create(char *name, char *elf);

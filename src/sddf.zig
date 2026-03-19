@@ -15,7 +15,7 @@ const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
 const Channel = SystemDescription.Channel;
 const SetVar = SystemDescription.SetVar;
-const AcRs: type = Pd.AccessRightsDomain;
+const OSSvc: type = Pd.OSSvc;
 
 const ConfigResources = data.Resources;
 
@@ -392,20 +392,20 @@ pub const Timer = struct {
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
             if (system.client_optionals.items[i]) {
-                var acrs = AcRs.create(
+                var ossvc = OSSvc.create(
                     system.allocator,
                     client,
                     0,
-                    fmt(system.allocator, "timer/{s}/acgrp", .{client.name}),
+                    fmt(system.allocator, "timer/{s}/ossvc", .{client.name}),
                     0x3,
                 );
                 // id is local to a protection domain
-                acrs.id = client.allocateAcgrpId(null) catch {
+                ossvc.id = client.allocateSvcId(null) catch {
                     @panic("failed to allocate id");
                 };
-                acrs.addChannel(system.client_configs.items[i].driver_id);
-                acrs.addDataName(fmt(system.allocator, "timer_client_{s}.data", .{client.name}));
-                client.addACRS(acrs);
+                ossvc.addChannel(system.client_configs.items[i].driver_id);
+                ossvc.addDataName(fmt(system.allocator, "timer_client_{s}.data", .{client.name}));
+                client.addOSService(ossvc);
             }
         }
 
@@ -1010,7 +1010,7 @@ pub const Serial = struct {
         return system.virt_rx != null;
     }
 
-    fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool, acrs: *Pd.AccessRightsDomain) void {
+    fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection, optional: bool, ossvc: *Pd.OSSvc) void {
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -1026,7 +1026,7 @@ pub const Serial = struct {
             client.addMap(queue_mr_client_map);
         }
         if (optional) {
-            acrs.addMap(queue_mr_client_map);
+            ossvc.addMap(queue_mr_client_map);
         }
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.device.name, server.name, client.name });
         const data_mr = Mr.create(system.allocator, data_mr_name, system.data_size, .{});
@@ -1044,14 +1044,14 @@ pub const Serial = struct {
             client.addMap(data_mr_client_map);
         }
         if (optional) {
-            acrs.addMap(data_mr_client_map);
+            ossvc.addMap(data_mr_client_map);
         }
         const channel = Channel.create(server, client, .{ .optional = optional }) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
         if (optional) {
-            acrs.addChannel(client_conn.id);
+            ossvc.addChannel(client_conn.id);
         }
     }
 
@@ -1067,7 +1067,7 @@ pub const Serial = struct {
                 &system.driver_config.rx,
                 &system.virt_rx_config.driver,
                 false,
-                @as(*Pd.AccessRightsDomain, undefined),
+                @as(*Pd.OSSvc, undefined),
             );
 
             system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
@@ -1085,7 +1085,7 @@ pub const Serial = struct {
             &system.driver_config.tx,
             &system.virt_tx_config.driver,
             false,
-            @as(*Pd.AccessRightsDomain, undefined),
+            @as(*Pd.OSSvc, undefined),
         );
 
         system.virt_tx_config.num_clients = @intCast(system.clients.items.len);
@@ -1103,11 +1103,11 @@ pub const Serial = struct {
             assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
             assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
 
-            var a = AcRs.create(
+            var a = OSSvc.create(
                 system.allocator,
                 client,
                 0,
-                fmt(system.allocator, "serial/{s}/acgrp", .{client.name}),
+                fmt(system.allocator, "serial/{s}/ossvc", .{client.name}),
                 0x1,
             );
             system.createConnection(
@@ -1129,11 +1129,11 @@ pub const Serial = struct {
             );
 
             if (system.client_optionals.items[i]) {
-                a.id = client.allocateAcgrpId(null) catch {
-                    @panic("Failed to allocate ID for acgroup");
+                a.id = client.allocateSvcId(null) catch {
+                    @panic("Failed to allocate ID for svc");
                 };
                 a.addDataName(fmt(system.allocator, "serial_client_{s}.data", .{client.name}));
-                client.addACRS(a);
+                client.addOSService(a);
             } else {
                 a.destroy();
             }

@@ -12,7 +12,7 @@ const Pd = SystemDescription.ProtectionDomain;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Channel = SystemDescription.Channel;
-const AcRs: type = Pd.AccessRightsDomain;
+const OSSvc: type = Pd.OSSvc;
 
 const ConfigResources = data.Resources;
 
@@ -100,16 +100,16 @@ pub const FileSystem = struct {
         const fs = system.fs;
         const client = system.client;
 
-        var acrs = AcRs.create(
+        var ossvc = OSSvc.create(
             allocator,
             client,
             0,
-            fmt(allocator, "fatfs/{s}/acgrp", .{client.name}),
+            fmt(allocator, "fatfs/{s}/ossvc", .{client.name}),
             0x0,
         );
         if ((options.optional orelse false)) {
             // id is local to a protection domain
-            acrs.id = client.allocateAcgrpId(null) catch {
+            ossvc.id = client.allocateSvcId(null) catch {
                 @panic("failed to allocate id");
             };
         }
@@ -150,7 +150,7 @@ pub const FileSystem = struct {
         if (!(options.optional orelse false)) {
             system.client.addMap(client_command_map);
         } else {
-            acrs.addMap(client_command_map);
+            ossvc.addMap(client_command_map);
         }
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
@@ -158,7 +158,7 @@ pub const FileSystem = struct {
         if (!(options.optional orelse false)) {
             system.client.addMap(client_completion_map);
         } else {
-            acrs.addMap(client_completion_map);
+            ossvc.addMap(client_completion_map);
         }
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
@@ -166,7 +166,7 @@ pub const FileSystem = struct {
         if (!(options.optional orelse false)) {
             system.client.addMap(client_share_map);
         } else {
-            acrs.addMap(client_share_map);
+            ossvc.addMap(client_share_map);
         }
         system.client_config.server.share = .createFromMap(client_share_map);
 
@@ -179,14 +179,14 @@ pub const FileSystem = struct {
         system.server_config.client.id = channel.pd_a_id;
         system.client_config.server.id = channel.pd_b_id;
         if (optional) {
-            acrs.addChannel(system.client_config.server.id);
+            ossvc.addChannel(system.client_config.server.id);
         }
 
         if (optional) {
-            acrs.addDataName(fmt(allocator, "fs_client_{s}.data", .{system.client.name}));
-            client.addACRS(acrs);
+            ossvc.addDataName(fmt(allocator, "fs_client_{s}.data", .{system.client.name}));
+            client.addOSService(ossvc);
         } else {
-            acrs.destroy();
+            ossvc.destroy();
         }
     }
 
