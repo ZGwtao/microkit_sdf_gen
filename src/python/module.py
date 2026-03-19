@@ -55,8 +55,8 @@ libsdfgen.sdfgen_pd_set_stack_size.restype = None
 libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
-libsdfgen.sdfgen_pd_set_template.restype = None
-libsdfgen.sdfgen_pd_set_template.argtypes = [c_void_p, c_uint8]
+libsdfgen.sdfgen_pd_set_monitor.restype = None
+libsdfgen.sdfgen_pd_set_monitor.argtypes = [c_void_p, c_uint8]
 
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
@@ -490,7 +490,7 @@ class SystemDescription:
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
-            template: Optional[bool] = None,
+            is_monitor: Optional[bool] = None,
         ) -> None:
             self._name = name
             c_name = c_char_p(name.encode("utf-8"))
@@ -513,8 +513,8 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_stack_size(self._obj, stack_size)
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
-            if template is not None:
-                libsdfgen.sdfgen_pd_set_template(self._obj, template)
+            if is_monitor is not None:
+                libsdfgen.sdfgen_pd_set_monitor(self._obj, is_monitor)
 
         @property
         def name(self) -> str:

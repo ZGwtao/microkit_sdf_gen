@@ -62,7 +62,7 @@ void sdfgen_pd_set_period(void *pd, uint32_t period);
 void sdfgen_pd_set_stack_size(void *pd, uint32_t stack_size);
 void sdfgen_pd_set_cpu(void *pd, uint8_t cpu);
 void sdfgen_pd_set_passive(void *pd, bool passive);
-void sdfgen_pd_set_template(void *pd, bool passive);
+void sdfgen_pd_set_monitor(void *pd, bool passive);
 bool sdfgen_pd_set_virtual_machine(void *pd, void *vm);
 
 void *sdfgen_vm_create(char *name, void **vcpus, uint32_t num_vcpus);

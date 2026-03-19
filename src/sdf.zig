@@ -433,8 +433,8 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
-        /// template feature
-        template: ?bool,
+        /// monitor pd feature (which controls dynamic pd)
+        is_monitor: ?bool,
         /// late_loading feature
         late_ld: ?bool,
         /// Access Rights Domains for a PD
@@ -461,7 +461,7 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
-            template: ?bool = null,
+            is_monitor: ?bool = null,
             late_ld: ?bool = null,
         };
 
@@ -537,14 +537,14 @@ pub const SystemDescription = struct {
             }
 
             pub fn render(acrs: *const AccessRightsDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
-                try std.fmt.format(writer, "{s}<acgroup name=\"{s}\"", .{ separator, acrs.name });
+                try std.fmt.format(writer, "{s}<os_service name=\"{s}\"", .{ separator, acrs.name });
                 if (id) |id_val| {
-                    try std.fmt.format(writer, " gid=\"{}\"", .{id_val});
+                    try std.fmt.format(writer, " svc_id=\"{}\"", .{id_val});
                 }
                 if (acrs.data_name) |buf| {
                     try std.fmt.format(writer, " data_path=\"{s}\"", .{buf});
                 }
-                try std.fmt.format(writer, " grp_type=\"{?}\"", .{acrs.grp_type});
+                try std.fmt.format(writer, " svc_type=\"{?}\"", .{acrs.grp_type});
                 _ = try writer.write(">\n");
                 const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
                 defer sdf.allocator.free(child_separator);
@@ -557,7 +557,7 @@ pub const SystemDescription = struct {
                 for (acrs.channels.items) |cid| {
                     try std.fmt.format(writer, "{s}<channel_end id=\"{}\"/>\n", .{ child_separator, cid });
                 }
-                try std.fmt.format(writer, "{s}</acgroup>\n", .{separator});
+                try std.fmt.format(writer, "{s}</os_service>\n", .{separator});
             }
         };
 
@@ -584,7 +584,7 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
-                .template = options.template,
+                .is_monitor = options.is_monitor,
                 .late_ld = options.late_ld,
                 .acrs_domains = ArrayList(AccessRightsDomain).initCapacity(allocator, MAX_ACRS_DMS) catch @panic("Could not allocate acrs"),
             };
@@ -732,9 +732,9 @@ pub const SystemDescription = struct {
             // If we are given an ID, this PD is in fact a child PD and we have to
             // specify the ID for the root PD to use when referring to this child PD.
 
-            if (pd.template) |template| {
-                if (template) {
-                    try std.fmt.format(writer, "{s}<template name=\"{s}\"", .{ separator, pd.name });
+            if (pd.is_monitor) |is_monitor| {
+                if (is_monitor) {
+                    try std.fmt.format(writer, "{s}<monitor_protection_domain name=\"{s}\"", .{ separator, pd.name });
                 }
             } else {
                 try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
@@ -804,9 +804,9 @@ pub const SystemDescription = struct {
                 try acrs.render(sdf, writer, child_separator, acrs.id);
             }
 
-            if (pd.template) |template| {
-                if (template) {
-                    try std.fmt.format(writer, "{s}</template>\n", .{separator});
+            if (pd.is_monitor) |is_monitor| {
+                if (is_monitor) {
+                    try std.fmt.format(writer, "{s}</monitor_protection_domain>\n", .{separator});
                 }
             } else {
                 try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});

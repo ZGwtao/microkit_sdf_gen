@@ -237,9 +237,9 @@ export fn sdfgen_pd_set_passive(c_pd: *align(8) anyopaque, passive: bool) void {
     pd.passive = passive;
 }
 
-export fn sdfgen_pd_set_template(c_pd: *align(8) anyopaque, template: bool) void {
+export fn sdfgen_pd_set_monitor(c_pd: *align(8) anyopaque, is_monitor: bool) void {
     const pd: *Pd = @ptrCast(c_pd);
-    pd.template = template;
+    pd.is_monitor = is_monitor;
 }
 
 export fn sdfgen_pd_set_virtual_machine(c_pd: *align(8) anyopaque, c_vm: *align(8) anyopaque) bool {
