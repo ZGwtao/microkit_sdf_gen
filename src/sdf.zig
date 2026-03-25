@@ -830,6 +830,113 @@ pub const SystemDescription = struct {
             }
         }
 
+        fn pageSizeBytes(page_size: MemoryRegion.PageSize) usize {
+            return @intCast(@intFromEnum(page_size));
+        }
+
+        fn fillSvcMapping(
+            dst: *data.Resources.Monitor.SvcMapping,
+            src: *const Map,
+        ) void {
+            // const ps = src.mr.page_size orelse .small;
+            // const page_size = pageSizeBytes(ps);
+            const page_size: usize = if (src.mr.page_size) |ps|
+                pageSizeBytes(ps)
+            else
+                0x1000;
+
+            if (page_size == 0) {
+                @panic("page size cannot be zero");
+            }
+            if (src.mr.size % page_size != 0) {
+                @panic("memory region size is not a multiple of page size");
+            }
+
+            dst.* = .{
+                .vaddr = @intCast(src.vaddr),
+                .page_num = @intCast(src.mr.size / page_size),
+                .page_size = page_size,
+            };
+        }
+
+        fn fillProtoConSvc(
+            dst: *data.Resources.Monitor.ProtoConSvc,
+            src: *const OSSvc,
+        ) void {
+            dst.* = std.mem.zeroes(data.Resources.Monitor.ProtoConSvc);
+
+            dst.svc_init = true;
+            dst.svc_idx = @intCast(src.id orelse @panic("os service has no id"));
+            dst.svc_type = src.svc_type orelse @panic("os service has no svc_type");
+
+            // channels
+            if (src.channels.items.len > dst.channels.len) {
+                @panic("too many channels in os service");
+            }
+            for (src.channels.items, 0..) |ch, i| {
+                dst.channels[i] = ch;
+            }
+
+            if (src.irqs.items.len > dst.irqs.len) {
+                @panic("too many irqs in os service");
+            }
+            for (src.irqs.items, 0..) |irq, i| {
+                dst.irqs[i] = irq.id orelse @panic("os service irq has no id");
+            }
+            // mappings
+            if (src.maps.items.len > dst.mappings.len) {
+                @panic("too many mappings in os service");
+            }
+            for (src.maps.items, 0..) |map, i| {
+                fillSvcMapping(&dst.mappings[i], &map);
+            }
+
+            // data_path
+            if (src.data_name) |name| {
+                const n = @min(name.len, dst.data_path.len - 1);
+                @memcpy(dst.data_path[0..n], name[0..n]);
+                dst.data_path[n] = 0;
+            }
+        }
+
+        fn populateMonitorSvcDb(pd: *ProtectionDomain) void {
+            const svcdb = &pd.mon_svc_db.?;
+
+            // initialise monitor_svcdb_t
+            svcdb.* = .{
+                .len = 0,
+                .list = std.mem.zeroes([16]data.Resources.Monitor.ProtoConSvcDb),
+            };
+
+            var db_idx: usize = 0;
+
+            for (pd.child_pds.items) |child_pd| {
+                if (child_pd.os_services.items.len == 0) continue;
+
+                if (db_idx >= svcdb.list.len) {
+                    @panic("too many child PDs with os_services for monitor svc db");
+                }
+
+                var entry = &svcdb.list[db_idx];
+                entry.* = std.mem.zeroes(data.Resources.Monitor.ProtoConSvcDb);
+
+                entry.pd_idx = child_pd.child_id orelse @panic("child pd has no child_id");
+                entry.svc_num = @intCast(child_pd.os_services.items.len);
+
+                if (child_pd.os_services.items.len > entry.array.len) {
+                    @panic("too many os_services in child pd");
+                }
+
+                for (child_pd.os_services.items, 0..) |*os_svc, svc_idx| {
+                    fillProtoConSvc(&entry.array[svc_idx], os_svc);
+                }
+
+                db_idx += 1;
+            }
+
+            svcdb.len = db_idx;
+        }
+
         pub fn generateSvc(pd: *ProtectionDomain, sdf: *SystemDescription, prefix: []const u8) !void {
             if (!pd.is_monitor) return;
 
@@ -846,6 +953,8 @@ pub const SystemDescription = struct {
                 std.debug.print("generateSvc: pd '{s}' is_monitor=true but mon_svc_db is null\n", .{pd.name});
                 @panic("monitor pd has no mon_svc_db");
             }
+
+            populateMonitorSvcDb(pd);
 
             try serialize_file.writeAll(std.mem.asBytes(&pd.mon_svc_db.?));
         }
