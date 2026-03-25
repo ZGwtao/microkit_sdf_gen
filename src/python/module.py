@@ -60,6 +60,8 @@ libsdfgen.sdfgen_pd_set_monitor.argtypes = [c_void_p, c_uint8]
 
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
+libsdfgen.sdfgen_generate_svc.restype = c_bool
+libsdfgen.sdfgen_generate_svc.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_channel_create.restype = c_void_p
 libsdfgen.sdfgen_channel_create.argtypes = [
@@ -763,6 +765,9 @@ class SystemDescription:
         """
         return libsdfgen.sdfgen_render(self._obj).decode("utf-8")
 
+    def generate_svc(self, output_dir: str) -> bool:
+        c_output_dir = c_char_p(output_dir.encode("utf-8"))
+        return libsdfgen.sdfgen_generate_svc(self._obj, c_output_dir)
 
 class Sddf:
     """

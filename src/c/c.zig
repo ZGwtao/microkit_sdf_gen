@@ -71,6 +71,13 @@ export fn sdfgen_render(c_sdf: *align(8) anyopaque) [*c]u8 {
     return @constCast(rendered);
 }
 
+export fn sdfgen_generate_svc(c_sdf: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    sdf.generateSvc(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}
+
 export fn sdfgen_dtb_parse(path: [*c]u8) ?*anyopaque {
     const file = std.fs.cwd().openFile(std.mem.span(path), .{}) catch |e| {
         log.err("could not open DTB '{s}' for parsing with error: {any}", .{ path, e });
@@ -239,7 +246,12 @@ export fn sdfgen_pd_set_passive(c_pd: *align(8) anyopaque, passive: bool) void {
 
 export fn sdfgen_pd_set_monitor(c_pd: *align(8) anyopaque, is_monitor: bool) void {
     const pd: *Pd = @ptrCast(c_pd);
-    pd.is_monitor = is_monitor;
+    if (is_monitor) {
+        // set 'is_monitor' explicitly in the function
+        pd.setMonitor();
+    } else {
+        pd.is_monitor = false;
+    }
 }
 
 export fn sdfgen_pd_set_virtual_machine(c_pd: *align(8) anyopaque, c_vm: *align(8) anyopaque) bool {

@@ -2,6 +2,7 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const allocPrint = std.fmt.allocPrint;
+const data = @import("data.zig");
 const log = @import("log.zig");
 
 pub const SystemDescription = struct {
@@ -434,7 +435,7 @@ pub const SystemDescription = struct {
         /// CPU core
         cpu: ?u8,
         /// monitor pd feature (which controls dynamic pd)
-        is_monitor: ?bool,
+        is_monitor: bool = false,
         /// late_loading feature
         late_ld: ?bool,
         /// OS services for a PD
@@ -443,6 +444,8 @@ pub const SystemDescription = struct {
         setvars: ArrayList(SetVar),
         /// Reserved memory mappings for a PD
         maps_reserved: ArrayList(Map),
+        // optional: only valid when is_monitor == true
+        mon_svc_db: ?data.Resources.Monitor.SvcDb,
 
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
@@ -461,7 +464,7 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
-            is_monitor: ?bool = null,
+            is_monitor: bool = false,
             late_ld: ?bool = null,
         };
 
@@ -536,30 +539,45 @@ pub const SystemDescription = struct {
                 ossvc.channels.append(end_id) catch @panic("Could not add channel to OSSvc");
             }
 
-            pub fn render(ossvc: *const OSSvc, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
-                try std.fmt.format(writer, "{s}<os_service name=\"{s}\"", .{ separator, ossvc.svc_name });
-                if (id) |id_val| {
-                    try std.fmt.format(writer, " svc_id=\"{}\"", .{id_val});
-                }
-                if (ossvc.data_name) |buf| {
-                    try std.fmt.format(writer, " data_path=\"{s}\"", .{buf});
-                }
-                try std.fmt.format(writer, " svc_type=\"{?}\"", .{ossvc.svc_type});
-                _ = try writer.write(">\n");
-                const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
-                defer sdf.allocator.free(child_separator);
+            // pub fn render(ossvc: *const OSSvc, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
+            pub fn render(ossvc: *const OSSvc, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+                // try std.fmt.format(writer, "{s}<os_service name=\"{s}\"", .{ separator, ossvc.svc_name });
+                // if (id) |id_val| {
+                //     try std.fmt.format(writer, " svc_id=\"{}\"", .{id_val});
+                // }
+                // if (ossvc.data_name) |buf| {
+                //     try std.fmt.format(writer, " data_path=\"{s}\"", .{buf});
+                // }
+                // try std.fmt.format(writer, " svc_type=\"{?}\"", .{ossvc.svc_type});
+                // _ = try writer.write(">\n");
+                // const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
+                // defer sdf.allocator.free(child_separator);
                 for (ossvc.maps.items) |map| {
-                    try map.render(writer, child_separator);
+                    try map.render(writer, separator);
                 }
                 for (ossvc.irqs.items) |irq| {
-                    try irq.render(writer, child_separator);
+                    try irq.render(writer, separator);
                 }
-                for (ossvc.channels.items) |cid| {
-                    try std.fmt.format(writer, "{s}<channel_end id=\"{}\"/>\n", .{ child_separator, cid });
-                }
-                try std.fmt.format(writer, "{s}</os_service>\n", .{separator});
+                // for (ossvc.channels.items) |cid| {
+                //     try std.fmt.format(writer, "{s}<channel_end id=\"{}\"/>\n", .{ separator, cid });
+                // }
+                // try std.fmt.format(writer, "{s}</os_service>\n", .{separator});
             }
         };
+
+        fn initMonitorSvcDb() data.Resources.Monitor.SvcDb {
+            return .{
+                .len = 0,
+                .list = std.mem.zeroes([16]data.Resources.Monitor.ProtoConSvcDb),
+            };
+        }
+
+        pub fn setMonitor(pd: *ProtectionDomain) void {
+            pd.is_monitor = true;
+            if (pd.mon_svc_db == null) {
+                pd.mon_svc_db = initMonitorSvcDb();
+            }
+        }
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
             const program_image_dupe = if (program_image) |p| allocator.dupe(u8, p) catch @panic("Could not dupe PD program_image") else null;
@@ -587,6 +605,7 @@ pub const SystemDescription = struct {
                 .is_monitor = options.is_monitor,
                 .late_ld = options.late_ld,
                 .os_services = ArrayList(OSSvc).initCapacity(allocator, MAX_OS_SERVICES) catch @panic("Could not allocate os_services"),
+                .mon_svc_db = null,
             };
         }
 
@@ -606,6 +625,7 @@ pub const SystemDescription = struct {
             }
             pd.irqs.deinit();
             pd.os_services.deinit();
+            pd.setvars.deinit();
         }
 
         /// There may be times where PD resources with an ID, such as a channel
@@ -732,10 +752,8 @@ pub const SystemDescription = struct {
             // If we are given an ID, this PD is in fact a child PD and we have to
             // specify the ID for the root PD to use when referring to this child PD.
 
-            if (pd.is_monitor) |is_monitor| {
-                if (is_monitor) {
-                    try std.fmt.format(writer, "{s}<monitor_protection_domain name=\"{s}\"", .{ separator, pd.name });
-                }
+            if (pd.is_monitor) {
+                try std.fmt.format(writer, "{s}<monitor_protection_domain name=\"{s}\"", .{ separator, pd.name });
             } else {
                 try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
             }
@@ -801,16 +819,35 @@ pub const SystemDescription = struct {
                 try setvar.render(writer, child_separator);
             }
             for (pd.os_services.items) |ossvc| {
-                try ossvc.render(sdf, writer, child_separator, ossvc.id);
+                // try ossvc.render(sdf, writer, child_separator, ossvc.id);
+                try ossvc.render(writer, child_separator);
             }
 
-            if (pd.is_monitor) |is_monitor| {
-                if (is_monitor) {
-                    try std.fmt.format(writer, "{s}</monitor_protection_domain>\n", .{separator});
-                }
+            if (pd.is_monitor) {
+                try std.fmt.format(writer, "{s}</monitor_protection_domain>\n", .{separator});
             } else {
                 try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});
             }
+        }
+
+        pub fn generateSvc(pd: *ProtectionDomain, sdf: *SystemDescription, prefix: []const u8) !void {
+            if (!pd.is_monitor) return;
+
+            const full_path = try std.fs.path.join(sdf.allocator, &.{ prefix, pd.name });
+            defer sdf.allocator.free(full_path);
+
+            const full_path_data = try std.fmt.allocPrint(sdf.allocator, "{s}.svc", .{full_path});
+            defer sdf.allocator.free(full_path_data);
+
+            const serialize_file = try std.fs.cwd().createFile(full_path_data, .{});
+            defer serialize_file.close();
+
+            if (pd.mon_svc_db == null) {
+                std.debug.print("generateSvc: pd '{s}' is_monitor=true but mon_svc_db is null\n", .{pd.name});
+                @panic("monitor pd has no mon_svc_db");
+            }
+
+            try serialize_file.writeAll(std.mem.asBytes(&pd.mon_svc_db.?));
         }
     };
 
@@ -999,6 +1036,32 @@ pub const SystemDescription = struct {
         _ = try writer.write("</system>" ++ "\x00");
 
         return sdf.xml_data.items[0 .. sdf.xml_data.items.len - 1 :0];
+    }
+
+    pub fn generateSvc(sdf: *SystemDescription, prefix: []const u8) !void {
+        // if (!system.connected) return Error.NotConnected;
+
+        // const allocator = system.allocator;
+
+        // const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
+        // try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
+
+        // for (system.clients.items, 0..) |client, i| {
+        //     const data_name = fmt(allocator, "timer_client_{s}", .{client.name});
+        //     try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
+        // }
+
+        for (sdf.pds.items) |pd| {
+            try pd.generateSvc(sdf, prefix);
+        }
+
+        // system.serialised = true;
+        const full_path = try std.fs.path.join(sdf.allocator, &.{ prefix, "helloworld" });
+        const full_path_data = try std.fmt.allocPrint(sdf.allocator, "{s}.data", .{full_path});
+
+        const serialize_file = try std.fs.cwd().createFile(full_path_data, .{});
+        defer serialize_file.close();
+        //try serialize_file.writeAll(bytes);
     }
 
     pub fn print(sdf: *SystemDescription) !void {
