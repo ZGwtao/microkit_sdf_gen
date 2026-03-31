@@ -164,7 +164,7 @@ export fn sdfgen_ossvc_add_irq(c_ossvc: *align(8) anyopaque, c_irq: *align(8) an
     const ossvc: *OSSvc = @ptrCast(c_ossvc);
     const irq: *Irq = @ptrCast(c_irq);
     const id = ossvc.addIrq(irq.*) catch |e| {
-        log.err("failed to add IRQ '{}' to ossvc : {}", .{ irq.id, e });
+        log.err("failed to add IRQ '{}' to ossvc : {}", .{ irq.id orelse @as(u8, 255), e });
         return -1;
     };
     return @intCast(id);
