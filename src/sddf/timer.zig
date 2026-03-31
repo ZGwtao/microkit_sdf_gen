@@ -14,6 +14,7 @@ const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Pd = SystemDescription.ProtectionDomain;
 const Channel = SystemDescription.Channel;
+const OSSvc = SystemDescription.OSSvc;
 
 const ConfigResources = data.Resources;
 
@@ -30,6 +31,7 @@ pub const Timer = struct {
     /// Client PDs serviced by the timer driver
     clients: std.array_list.Managed(*Pd),
     client_configs: std.array_list.Managed(ConfigResources.Timer.Client),
+    client_optionals: std.array_list.Managed(bool),
     connected: bool = false,
     serialised: bool = false,
 
@@ -48,15 +50,17 @@ pub const Timer = struct {
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .clients = std.array_list.Managed(*Pd).init(allocator),
             .client_configs = std.array_list.Managed(ConfigResources.Timer.Client).init(allocator),
+            .client_optionals = std.array_list.Managed(bool).init(allocator),
         };
     }
 
     pub fn deinit(system: *Timer) void {
         system.clients.deinit();
         system.client_configs.deinit();
+        system.client_optionals.deinit();
     }
 
-    pub fn addClient(system: *Timer, client: *Pd) Error!void {
+    pub fn addClient(system: *Timer, client: *Pd, optional: bool) Error!void {
         // Check that the client does not already exist
         for (system.clients.items) |existing_client| {
             if (std.mem.eql(u8, existing_client.name, client.name)) {
@@ -75,6 +79,7 @@ pub const Timer = struct {
         }
         system.clients.append(client) catch @panic("Could not add client to Timer");
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Timer.Client, .{})) catch @panic("Could not add client to Timer");
+        system.client_optionals.append(optional) catch @panic("Could not add client to Timer");
     }
 
     pub fn connect(system: *Timer) !void {
@@ -90,9 +95,26 @@ pub const Timer = struct {
                 .pp = .b,
                 // Client does not need to notify driver
                 .pd_b_notify = false,
+                .optional = system.client_optionals.items[i],
             }) catch unreachable;
             system.sdf.addChannel(ch);
             system.client_configs.items[i].driver_id = ch.pd_b_id;
+            if (system.client_optionals.items[i]) {
+                var ossvc = OSSvc.create(
+                    system.allocator,
+                    client,
+                    0,
+                    fmt(system.allocator, "timer/{s}/ossvc", .{client.name}),
+                    0x3,
+                );
+                // id is local to a protection domain
+                ossvc.id = client.allocateSvcId(null) catch {
+                    @panic("failed to allocate id");
+                };
+                ossvc.addChannel(system.client_configs.items[i].driver_id);
+                ossvc.addDataName(fmt(system.allocator, "timer_client_{s}.data", .{client.name}));
+                client.addOSService(ossvc);
+            }
         }
 
         system.connected = true;

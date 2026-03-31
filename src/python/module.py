@@ -57,9 +57,13 @@ libsdfgen.sdfgen_pd_set_stack_size.restype = None
 libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
+libsdfgen.sdfgen_pd_set_monitor.restype = None
+libsdfgen.sdfgen_pd_set_monitor.argtypes = [c_void_p, c_uint8]
 
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
+libsdfgen.sdfgen_generate_svc.restype = c_bool
+libsdfgen.sdfgen_generate_svc.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_channel_create.restype = c_void_p
 libsdfgen.sdfgen_channel_create.argtypes = [
@@ -79,7 +83,7 @@ libsdfgen.sdfgen_channel_get_pd_b_id.restype = c_uint8
 libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
-libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool]
+libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p, c_uint64]
 libsdfgen.sdfgen_map_get_vaddr.restype = c_uint64
 libsdfgen.sdfgen_map_get_vaddr.argtypes = [c_void_p]
 libsdfgen.sdfgen_map_destroy.restype = None
@@ -149,13 +153,22 @@ libsdfgen.sdfgen_pd_set_virtual_machine.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_ioport.restype = c_int8
 libsdfgen.sdfgen_pd_add_ioport.argtypes = [c_void_p, c_void_p]
 
+libsdfgen.sdfgen_ossvc_create.restype = c_void_p
+libsdfgen.sdfgen_ossvc_create.argtypes = [c_void_p, c_uint32, c_char_p, c_uint8]
+libsdfgen.sdfgen_ossvc_destroy.restype = None
+libsdfgen.sdfgen_ossvc_destroy.argtypes = [c_void_p]
+libsdfgen.sdfgen_ossvc_add_map.restype = None
+libsdfgen.sdfgen_ossvc_add_map.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_ossvc_add_irq.restype = c_int8
+libsdfgen.sdfgen_ossvc_add_irq.argtypes = [c_void_p, c_void_p]
+
 libsdfgen.sdfgen_sddf_timer.restype = c_void_p
 libsdfgen.sdfgen_sddf_timer.argtypes = [c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_timer_destroy.restype = None
 libsdfgen.sdfgen_sddf_timer_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_timer_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_timer_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_timer_add_client.argtypes = [c_void_p, c_void_p, c_bool]
 
 libsdfgen.sdfgen_sddf_timer_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_timer_connect.argtypes = [c_void_p]
@@ -208,7 +221,7 @@ libsdfgen.sdfgen_sddf_serial_destroy.restype = None
 libsdfgen.sdfgen_sddf_serial_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_serial_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_serial_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_serial_add_client.argtypes = [c_void_p, c_void_p, c_bool]
 
 libsdfgen.sdfgen_sddf_serial_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_connect.argtypes = [c_void_p]
@@ -294,7 +307,7 @@ libsdfgen.sdfgen_vmm_serialise_config.argtypes = [c_void_p, c_char_p]
 libsdfgen.sdfgen_lionsos_fs_fat.restype = c_void_p
 libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_lionsos_fs_fat_connect.restype = c_bool
-libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p, c_bool]
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.argtypes = [c_void_p, c_char_p]
 libsdfgen.sdfgen_lionsos_fs_nfs.restype = c_void_p
@@ -473,19 +486,23 @@ class SystemDescription:
         def __init__(
             self,
             name: str,
-            program_image: str,
+            program_image: Optional[str] = None,
             priority: Optional[int] = None,
             budget: Optional[int] = None,
             period: Optional[int] = None,
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            is_monitor: Optional[bool] = None,
         ) -> None:
             self._name = name
             self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
-            c_program_image = c_char_p(program_image.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
+            if program_image is not None:
+                c_program_image = c_char_p(program_image.encode("utf-8"))
+                self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
+            else:
+                self._obj = libsdfgen.sdfgen_pd_create(c_name, None)
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
             if budget is not None:
@@ -498,6 +515,8 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_stack_size(self._obj, stack_size)
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
+            if is_monitor is not None:
+                libsdfgen.sdfgen_pd_set_monitor(self._obj, is_monitor)
 
         @property
         def name(self) -> str:
@@ -620,9 +639,16 @@ class SystemDescription:
             perms: str,
             *,
             cached: bool = True,
+            setvar_vaddr: Optional[str] = None,
         ) -> None:
             c_perms = SystemDescription.Map._perms_to_c_bindings(perms)
-            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached)
+            if setvar_vaddr is not None:
+                c_vaddr_str = setvar_vaddr.encode("utf-8")
+                vaddr_len = len(c_vaddr_str)
+            else:
+                c_vaddr_str = None
+                vaddr_len = 0
+            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached, c_vaddr_str, vaddr_len)
             if self._obj is None:
                 raise Exception("failed to create mapping")
 
@@ -796,6 +822,46 @@ class SystemDescription:
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_channel_destroy(self._obj)
+    
+    class OSSvc:
+        _name: str
+        _obj: c_void_p
+        _pd: SystemDescription.ProtectionDomain
+        _id: int
+        _type: int
+
+        def __init__(
+            self,
+            parent: SystemDescription.ProtectionDomain,
+            id: int = 0,
+            name: str = "dummy",
+            svc_type: int = 0,
+        ) -> None:
+            self._name = name
+            self._type = svc_type
+            c_name = c_char_p(name.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_ossvc_create(parent, id, c_name, svc_type)
+            self._pd = parent
+
+        @property
+        def name(self) -> str:
+            return self._name
+
+        def add_map(self, map: SystemDescription.Map):
+            libsdfgen.sdfgen_ossvc_add_map(self._obj, map._obj)
+
+        def add_irq(self, irq: SystemDescription.Irq) -> int:
+            id = libsdfgen.sdfgen_ossvc_add_irq(self._obj, irq._obj)
+            if id < 0:
+                raise Exception(f"failed to add IRQ to svc '{self.name}'")
+
+            return id
+
+        def __del__(self):
+            libsdfgen.sdfgen_ossvc_destroy(self._obj)
+
+        def __repr__(self) -> str:
+            return f"OSService({self.name})"
 
     def __init__(self, arch: Arch, paddr_top: int) -> None:
         """
@@ -822,6 +888,9 @@ class SystemDescription:
         """
         return libsdfgen.sdfgen_render(self._obj).decode("utf-8")
 
+    def generate_svc(self, output_dir: str) -> bool:
+        c_output_dir = c_char_p(output_dir.encode("utf-8"))
+        return libsdfgen.sdfgen_generate_svc(self._obj, c_output_dir)
 
 class Sddf:
     """
@@ -884,9 +953,9 @@ class Sddf:
             if self._obj is None:
                 raise Exception("failed to create serial system")
 
-        def add_client(self, client: SystemDescription.ProtectionDomain):
+        def add_client(self, client: SystemDescription.ProtectionDomain, optional: bool = False):
             """Add a new client connection to the serial system."""
-            ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj)
+            ret = libsdfgen.sdfgen_sddf_serial_add_client(self._obj, client._obj, optional)
             if ret == SddfStatus.OK:
                 return
             elif ret == SddfStatus.DUPLICATE_CLIENT:
@@ -1113,8 +1182,8 @@ class Sddf:
 
             self._obj: c_void_p = libsdfgen.sdfgen_sddf_timer(sdf._obj, device_obj, driver._obj)
 
-        def add_client(self, client: SystemDescription.ProtectionDomain):
-            ret = libsdfgen.sdfgen_sddf_timer_add_client(self._obj, client._obj)
+        def add_client(self, client: SystemDescription.ProtectionDomain, optional: bool = False):
+            ret = libsdfgen.sdfgen_sddf_timer_add_client(self._obj, client._obj, optional)
             if ret == SddfStatus.OK:
                 return
             elif ret == SddfStatus.DUPLICATE_CLIENT:
@@ -1355,8 +1424,8 @@ class LionsOs:
                 if self._obj is None:
                     raise Exception("failed to create FAT file system")
 
-            def connect(self) -> bool:
-                return libsdfgen.sdfgen_lionsos_fs_fat_connect(self._obj)
+            def connect(self, optional: bool = False) -> bool:
+                return libsdfgen.sdfgen_lionsos_fs_fat_connect(self._obj, optional)
 
             def serialise_config(self, output_dir: str) -> bool:
                 c_output_dir = c_char_p(output_dir.encode("utf-8"))

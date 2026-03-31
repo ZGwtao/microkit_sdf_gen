@@ -22,6 +22,7 @@ const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Arch = SystemDescription.Arch;
+const OSSvc = SystemDescription.OSSvc;
 
 fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
     const arch: Arch = @enumFromInt(c_arch);
@@ -75,6 +76,13 @@ export fn sdfgen_render(c_sdf: *align(8) anyopaque) [*c]u8 {
     return @constCast(rendered);
 }
 
+export fn sdfgen_generate_svc(c_sdf: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    sdf.generateSvc(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}
+
 export fn sdfgen_dtb_parse(path: [*c]u8) ?*anyopaque {
     const file = std.fs.cwd().openFile(std.mem.span(path), .{}) catch |e| {
         log.err("could not open DTB '{s}' for parsing with error: {any}", .{ path, e });
@@ -126,9 +134,47 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
     blob.deinit(allocator);
 }
 
+export fn sdfgen_ossvc_create(c_pd: *align(8) anyopaque, id: u32, name: [*c]u8, grp_type: u8) *anyopaque {
+    const ossvc = allocator.create(OSSvc) catch @panic("OOM");
+    const name_slice = std.mem.span(name);
+    const pd: *Pd = @ptrCast(c_pd);
+    ossvc.* = OSSvc.create(
+        allocator,
+        pd,
+        id,
+        name_slice,
+        grp_type,
+    );
+    return ossvc;
+}
+
+export fn sdfgen_ossvc_destroy(c_ossvc: *align(8) anyopaque) void {
+    const ossvc: *OSSvc = @ptrCast(c_ossvc);
+    allocator.destroy(ossvc);
+}
+
+export fn sdfgen_ossvc_add_map(c_ossvc: *align(8) anyopaque, c_map: *align(8) anyopaque) void {
+    const ossvc: *OSSvc = @ptrCast(c_ossvc);
+    const map: *Map = @ptrCast(c_map);
+
+    ossvc.addMap(map.*);
+}
+
+export fn sdfgen_ossvc_add_irq(c_ossvc: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
+    const ossvc: *OSSvc = @ptrCast(c_ossvc);
+    const irq: *Irq = @ptrCast(c_irq);
+    const id = ossvc.addIrq(irq.*) catch |e| {
+        log.err("failed to add IRQ '{}' to ossvc : {}", .{ irq.id, e });
+        return -1;
+    };
+    return @intCast(id);
+}
+
 export fn sdfgen_pd_create(name: [*c]u8, program_image: [*c]u8) *anyopaque {
     const pd = allocator.create(Pd) catch @panic("OOM");
-    pd.* = Pd.create(allocator, std.mem.span(name), std.mem.span(program_image), .{});
+    const program_image_slice: ?[]const u8 =
+        if (program_image != null) std.mem.span(program_image) else null;
+    pd.* = Pd.create(allocator, std.mem.span(name), program_image_slice, .{});
 
     return pd;
 }
@@ -220,6 +266,16 @@ export fn sdfgen_pd_set_cpu(c_pd: *align(8) anyopaque, cpu: u8) void {
 export fn sdfgen_pd_set_passive(c_pd: *align(8) anyopaque, passive: bool) void {
     const pd: *Pd = @ptrCast(c_pd);
     pd.passive = passive;
+}
+
+export fn sdfgen_pd_set_monitor(c_pd: *align(8) anyopaque, is_monitor: bool) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    if (is_monitor) {
+        // set 'is_monitor' explicitly in the function
+        pd.setMonitor();
+    } else {
+        pd.is_monitor = false;
+    }
 }
 
 export fn sdfgen_pd_set_virtual_machine(c_pd: *align(8) anyopaque, c_vm: *align(8) anyopaque) bool {
@@ -444,7 +500,7 @@ export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     allocator.destroy(mr);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool) ?*anyopaque {
+export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, name: [*c]u8, size: u64) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
@@ -461,7 +517,17 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
     const map = allocator.create(Map) catch @panic("OOM");
     // TODO: I think we got some memory problems if we're dereferencing this stuff since
     // we need MemoryRegion to still be valid the whole time since we depend on it
-    map.* = Map.create(mr.*, vaddr, perms, .{ .cached = cached });
+    if (size == 0) {
+        map.* = Map.create(mr.*, vaddr, perms, .{ .cached = cached });
+    } else {
+        const name_slice: ?[]const u8 =
+            if (name) |n| std.mem.span(n) else null;
+
+        map.* = Map.create(mr.*, vaddr, perms, .{
+            .cached = cached,
+            .setvar_vaddr = name_slice,
+        });
+    }
 
     return map;
 }
@@ -554,9 +620,9 @@ export fn sdfgen_sddf_timer_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(timer);
 }
 
-export fn sdfgen_sddf_timer_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_timer_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, optional: bool) bindings.sdfgen_sddf_status_t {
     const timer: *sddf.Timer = @ptrCast(system);
-    timer.addClient(@ptrCast(client)) catch |e| {
+    timer.addClient(@ptrCast(client), optional) catch |e| {
         switch (e) {
             sddf.Timer.Error.DuplicateClient => return 1,
             sddf.Timer.Error.InvalidClient => return 2,
@@ -610,9 +676,9 @@ export fn sdfgen_sddf_serial_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(serial);
 }
 
-export fn sdfgen_sddf_serial_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_serial_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, optional: bool) bindings.sdfgen_sddf_status_t {
     const serial: *sddf.Serial = @ptrCast(system);
-    serial.addClient(@ptrCast(client)) catch |e| {
+    serial.addClient(@ptrCast(client), optional) catch |e| {
         switch (e) {
             sddf.Serial.Error.DuplicateClient => return 1,
             sddf.Serial.Error.InvalidClient => return 2,
@@ -1007,9 +1073,9 @@ export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyo
     return fs;
 }
 
-export fn sdfgen_lionsos_fs_fat_connect(system: *align(8) anyopaque) bool {
+export fn sdfgen_lionsos_fs_fat_connect(system: *align(8) anyopaque, optional: bool) bool {
     const fat: *lionsos.FileSystem.Fat = @ptrCast(system);
-    fat.connect() catch |e| {
+    fat.connect(optional) catch |e| {
         log.err("failed to connect FAT file system '{s}': {any}", .{ fat.fs.fs.name, e });
         return false;
     };

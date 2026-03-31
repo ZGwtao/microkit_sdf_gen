@@ -393,6 +393,35 @@ pub const Resources = struct {
             num_pbufs: u64,
         };
     };
+
+    pub const Monitor = struct {
+        pub const SvcMapping = extern struct {
+            vaddr: usize,
+            page_num: usize,
+            page_size: usize,
+        };
+
+        pub const ProtoConSvc = extern struct {
+            svc_init: bool,
+            svc_idx: u8,
+            svc_type: u8,
+            channels: [4]u8,
+            irqs: [4]u8,
+            mappings: [4]SvcMapping,
+            data_path: [64]u8,
+        };
+
+        pub const ProtoConSvcDb = extern struct {
+            pd_idx: u8,
+            svc_num: u8,
+            array: [16]ProtoConSvc,
+        };
+
+        pub const SvcDb = extern struct {
+            len: usize,
+            list: [16]ProtoConSvcDb,
+        };
+    };
 };
 
 pub fn serialize(allocator: Allocator, s: anytype, prefix: []const u8, path: []const u8) !void {

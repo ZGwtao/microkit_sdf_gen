@@ -12,6 +12,7 @@ const Pd = SystemDescription.ProtectionDomain;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Channel = SystemDescription.Channel;
+const OSSvc = SystemDescription.OSSvc;
 
 const ConfigResources = data.Resources;
 
@@ -91,12 +92,27 @@ pub const FileSystem = struct {
         command_vaddr: ?u64 = null,
         completion_vaddr: ?u64 = null,
         share_vaddr: ?u64 = null,
+        optional: ?bool = false,
     };
 
     pub fn connect(system: *FileSystem, options: ConnectOptions) void {
         const allocator = system.allocator;
         const fs = system.fs;
         const client = system.client;
+
+        var ossvc = OSSvc.create(
+            allocator,
+            client,
+            0,
+            fmt(allocator, "fatfs/{s}/ossvc", .{client.name}),
+            0x0,
+        );
+        if ((options.optional orelse false)) {
+            // id is local to a protection domain
+            ossvc.id = client.allocateSvcId(null) catch {
+                @panic("failed to allocate id");
+            };
+        }
 
         const fs_command_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_command_queue", .{fs.name}), system.command_queue_size, .{});
         const fs_completion_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_completion_queue", .{fs.name}), system.completion_queue_size, .{});
@@ -108,7 +124,7 @@ pub const FileSystem = struct {
             if (system.data_mr) |data_mr| {
                 break :blk data_mr;
             } else {
-                const mr = Mr.create(allocator, fmt(allocator, "fs_{s}_share", .{fs.name}), system.data_size, .{});
+                const mr = Mr.create(allocator, fmt(allocator, "fs_{s}_share", .{fs.name}), system.data_size, .{ .page_size = .large });
                 system.sdf.addMemoryRegion(mr);
                 break :blk mr;
             }
@@ -126,26 +142,48 @@ pub const FileSystem = struct {
         system.server_config.client.share = .createFromMap(server_share_map);
         createMapping(fs, server_share_map);
 
-        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
-        system.client.addMap(client_command_map);
+        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached, .optional = options.optional });
+        if ((options.optional orelse false)) {
+            ossvc.addMap(client_command_map);
+        } else {
+            system.client.addMap(client_command_map);
+        }
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
-        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
-
-        system.client.addMap(client_completion_map);
+        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached, .optional = options.optional });
+        if ((options.optional orelse false)) {
+            ossvc.addMap(client_completion_map);
+        } else {
+            system.client.addMap(client_completion_map);
+        }
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
-        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
-        system.client.addMap(client_share_map);
+        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached, .optional = options.optional });
+        if ((options.optional orelse false)) {
+            ossvc.addMap(client_share_map);
+        } else {
+            system.client.addMap(client_share_map);
+        }
         system.client_config.server.share = .createFromMap(client_share_map);
 
         system.server_config.client.queue_len = 512;
         system.client_config.server.queue_len = 512;
 
-        const channel = Channel.create(system.fs, system.client, .{}) catch @panic("failed to create connection channel");
+        const optional = options.optional orelse false;
+        const channel = Channel.create(system.fs, system.client, .{ .optional = optional }) catch @panic("failed to create connection channel");
         system.sdf.addChannel(channel);
         system.server_config.client.id = channel.pd_a_id;
         system.client_config.server.id = channel.pd_b_id;
+        if (optional) {
+            ossvc.addChannel(system.client_config.server.id);
+        }
+
+        if (optional) {
+            ossvc.addDataName(fmt(allocator, "fs_client_{s}.data", .{system.client.name}));
+            client.addOSService(ossvc);
+        } else {
+            client.destroy();
+        }
     }
 
     pub fn serialiseConfig(system: *FileSystem, prefix: []const u8) !void {
@@ -207,8 +245,8 @@ pub const FileSystem = struct {
             try nfs.net.addClientWithCopier(fs_pd, nfs.net_copier, .{
                 .mac_addr = nfs.mac_addr,
             });
-            try nfs.serial.addClient(fs_pd);
-            try nfs.timer.addClient(fs_pd);
+            try nfs.serial.addClient(fs_pd, false);
+            try nfs.timer.addClient(fs_pd, false);
 
             nfs.fs.connect(.{});
         }
@@ -240,7 +278,7 @@ pub const FileSystem = struct {
             };
         }
 
-        pub fn connect(fat: *Fat) !void {
+        pub fn connect(fat: *Fat, optional: bool) !void {
             const allocator = fat.allocator;
             const sdf = fat.fs.sdf;
             const fs_pd = fat.fs.fs;
@@ -248,7 +286,7 @@ pub const FileSystem = struct {
             try fat.blk.addClient(fs_pd, .{
                 .partition = fat.partition,
             });
-            fat.fs.connect(.{});
+            fat.fs.connect(.{ .optional = optional });
             // Special things for FATFS
             const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, .{});
             const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, .{});

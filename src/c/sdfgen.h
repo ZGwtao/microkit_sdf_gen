@@ -23,6 +23,7 @@ typedef enum {
 void *sdfgen_create(sdfgen_arch_t arch, uint64_t paddr_top);
 void sdfgen_deinit(void *sdf);
 void *sdfgen_render(void *sdf);
+bool sdfgen_generate_svc(void *sdf, char *output_dir);
 
 /*** DTB-related functionality ***/
 
@@ -41,6 +42,14 @@ void *sdfgen_add_pd(void *sdf, void *pd);
 void *sdfgen_add_mr(void *sdf, void *mr);
 void *sdfgen_add_channel(void *sdf, void *ch);
 
+/* os services */
+void *sdfgen_ossvc_create(void *pd, uint32_t id, char *name, uint8_t gtype);
+void sdfgen_ossvc_destroy(void *svc);
+
+void sdfgen_ossvc_add_map(void *svc, void *map);
+int8_t sdfgen_ossvc_add_irq(void *svc, void *irq);
+
+
 void *sdfgen_pd_create(char *name, char *elf);
 void sdfgen_pd_destroy(void *pd);
 
@@ -56,6 +65,7 @@ void sdfgen_pd_set_period(void *pd, uint32_t period);
 void sdfgen_pd_set_stack_size(void *pd, uint32_t stack_size);
 void sdfgen_pd_set_cpu(void *pd, uint8_t cpu);
 void sdfgen_pd_set_passive(void *pd, bool passive);
+void sdfgen_pd_set_monitor(void *pd, bool passive);
 bool sdfgen_pd_set_virtual_machine(void *pd, void *vm);
 
 void *sdfgen_vm_create(char *name, void **vcpus, uint32_t num_vcpus);
@@ -94,7 +104,7 @@ uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);
 
-void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached);
+void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached, char *setvaddr, uint64_t size);
 uint64_t sdfgen_map_get_vaddr(void *map);
 void *sdfgen_map_destroy(void *map);
 
@@ -115,12 +125,12 @@ void *sdfgen_sddf_init(char *path);
 
 void *sdfgen_sddf_timer(void *sdf, void *device, void *driver);
 void sdfgen_sddf_timer_destroy(void *system);
-sdfgen_sddf_status_t sdfgen_sddf_timer_add_client(void *system, void *client);
+sdfgen_sddf_status_t sdfgen_sddf_timer_add_client(void *system, void *client, bool optional);
 bool sdfgen_sddf_timer_connect(void *system);
 bool sdfgen_sddf_timer_serialise_config(void *system, char *output_dir);
 
 void *sdfgen_sddf_serial(void *sdf, void *device, void *driver, void *virt_tx, void *virt_rx, bool enable_color);
-sdfgen_sddf_status_t sdfgen_sddf_serial_add_client(void *system, void *client);
+sdfgen_sddf_status_t sdfgen_sddf_serial_add_client(void *system, void *client, bool optional);
 bool sdfgen_sddf_serial_connect(void *system);
 bool sdfgen_sddf_serial_serialise_config(void *system, char *output_dir);
 
@@ -162,7 +172,7 @@ bool sdfgen_vmm_connect(void *vmm);
 /*** LionsOS ***/
 
 void *sdfgen_lionsos_fs_fat(void *sdf, void *fs, void *client);
-bool sdfgen_lionsos_fs_fat_connect(void *system);
+bool sdfgen_lionsos_fs_fat_connect(void *system, bool optional);
 
 void *sdfgen_lionsos_fs_nfs(void *sdf, void *fs, void *client, void *net, void *net_copier, uint8_t mac_addr[6], void *serial, void *timer);
 bool sdfgen_lionsos_fs_nfs_connect(void *system);

@@ -2,6 +2,7 @@ const std = @import("std");
 const ArrayList = std.array_list.Managed;
 const Allocator = std.mem.Allocator;
 const allocPrint = std.fmt.allocPrint;
+const data = @import("data.zig");
 const log = @import("log.zig");
 
 pub const SystemDescription = struct {
@@ -204,10 +205,12 @@ pub const SystemDescription = struct {
         perms: Perms,
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
+        optional: ?bool,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
+            optional: ?bool = null,
         };
 
         pub const Perms = packed struct {
@@ -289,6 +292,7 @@ pub const SystemDescription = struct {
                 .perms = perms,
                 .cached = options.cached,
                 .setvar_vaddr = options.setvar_vaddr,
+                .optional = options.optional,
             };
         }
 
@@ -304,6 +308,11 @@ pub const SystemDescription = struct {
             if (map.cached) |cached| {
                 const cached_str = if (cached) "true" else "false";
                 try std.fmt.format(writer, " cached=\"{s}\"", .{cached_str});
+            }
+
+            if (map.optional) |optional| {
+                const optional_str = if (optional) "true" else "false";
+                try std.fmt.format(writer, " optional=\"{s}\"", .{optional_str});
             }
 
             _ = try writer.write(" />\n");
@@ -420,7 +429,7 @@ pub const SystemDescription = struct {
         /// Keeping track of what IDs are available for channels, IRQs, etc
         channel_ids: std.bit_set.StaticBitSet(MAX_IDS),
         child_ids: std.bit_set.StaticBitSet(MAX_IDS),
-
+        svc_id: std.bit_set.StaticBitSet(MAX_IDS),
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
         /// If this PD is a child of another PD, this ID identifies it to its parent PD
@@ -430,11 +439,22 @@ pub const SystemDescription = struct {
 
         setvars: ArrayList(SetVar),
 
+        /// monitor pd feature (which controls dynamic pd)
+        is_monitor: bool = false,
+        /// OS services for a PD
+        os_services: ArrayList(OSSvc),
+        /// Reserved memory mappings for a PD
+        maps_reserved: ArrayList(Map),
+        // optional: only valid when is_monitor == true
+        mon_svc_db: ?data.Resources.Monitor.SvcDb,
+
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
         const MAX_IRQS: u8 = MAX_IDS;
         const MAX_IOPORTS: u8 = MAX_IDS;
         const MAX_CHILD_PDS: u8 = MAX_IDS;
+        const MAX_OS_SERVICES: u8 = 16;
+        const MAX_SVC_IDS: u8 = MAX_OS_SERVICES;
 
         pub const DEFAULT_PRIORITY: u8 = 100;
 
@@ -446,6 +466,7 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
+            is_monitor: bool = false,
         };
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
@@ -456,12 +477,14 @@ pub const SystemDescription = struct {
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe PD name"),
                 .program_image = program_image_dupe,
                 .maps = ArrayList(Map).init(allocator),
+                .maps_reserved = ArrayList(Map).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .ioports = ArrayList(IoPort).initCapacity(allocator, MAX_IOPORTS) catch @panic("Could not allocate I/O Ports"),
                 .vm = null,
                 .channel_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
                 .child_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
+                .svc_id = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
                 .setvars = ArrayList(SetVar).init(allocator),
                 .priority = options.priority,
                 .passive = options.passive,
@@ -471,6 +494,9 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .is_monitor = options.is_monitor,
+                .os_services = ArrayList(OSSvc).initCapacity(allocator, MAX_OS_SERVICES) catch @panic("Could not allocate os_services"),
+                .mon_svc_db = null,
             };
         }
 
@@ -483,6 +509,8 @@ pub const SystemDescription = struct {
             pd.child_pds.deinit();
             pd.irqs.deinit();
             pd.ioports.deinit();
+            pd.setvars.deinit();
+            pd.os_services.deinit();
         }
 
         /// There may be times where a PD resources is attached with an ID, such as a channel
@@ -512,6 +540,30 @@ pub const SystemDescription = struct {
             }
         }
 
+        pub fn allocateSvcId(pd: *ProtectionDomain, id: ?u32) !u32 {
+            if (id) |chosen_id| {
+                if (pd.svc_id.isSet(chosen_id)) {
+                    log.err("attempting to allocate svc id '{}' in PD '{s}'", .{ chosen_id, pd.name });
+                    return error.AlreadyAllocatedId;
+                } else {
+                    if (chosen_id >= MAX_SVC_IDS) {
+                        log.err("attempting to allocate svc id '{}' which is out of bounds for PD '{s}'", .{ chosen_id, pd.name });
+                        return error.IdOutOfBounds;
+                    }
+                    pd.svc_id.setValue(chosen_id, true);
+                    return chosen_id;
+                }
+            } else {
+                for (0..MAX_SVC_IDS) |i| {
+                    if (!pd.svc_id.isSet(i)) {
+                        pd.svc_id.setValue(i, true);
+                        return @intCast(i);
+                    }
+                }
+                return error.NoMoreIds;
+            }
+        }
+
         pub fn setVirtualMachine(pd: *ProtectionDomain, vm: *VirtualMachine) !void {
             if (pd.vm != null) return error.ProtectionDomainAlreadyHasVirtualMachine;
             pd.vm = vm;
@@ -519,6 +571,11 @@ pub const SystemDescription = struct {
 
         pub fn addMap(pd: *ProtectionDomain, map: Map) void {
             pd.maps.append(map) catch @panic("Could not add Map to ProtectionDomain");
+            pd.maps_reserved.append(map) catch @panic("Could not add Map to ProtectionDomain reserved maps");
+        }
+
+        pub fn addMapReserved(pd: *ProtectionDomain, map: Map) void {
+            pd.maps_reserved.append(map) catch @panic("Could not add (reserved) Map to ProtectionDomain");
         }
 
         pub fn addIrq(pd: *ProtectionDomain, irq: Irq) !u8 {
@@ -583,7 +640,7 @@ pub const SystemDescription = struct {
             // TODO: fix this
             const page_size = MemoryRegion.PageSize.optimal(.aarch64, mr.size).toInt(.aarch64);
             var next_vaddr: u64 = 0x20_000_000;
-            for (pd.maps.items) |map| {
+            for (pd.maps_reserved.items) |map| {
                 if (map.vaddr >= next_vaddr) {
                     next_vaddr = map.vaddr + map.mr.size;
                     // TODO: Use builtins like @rem
@@ -605,11 +662,23 @@ pub const SystemDescription = struct {
             return next_vaddr;
         }
 
+        pub fn addOSService(pd: *ProtectionDomain, ossvc: OSSvc) void {
+            if (pd.os_services.items.len == MAX_OS_SERVICES) {
+                log.err("failed to add OS service '{s}' to PD '{s}', maximum OS services reached", .{ ossvc.svc_name, pd.name });
+                return;
+            }
+            pd.os_services.appendAssumeCapacity(ossvc);
+        }
+
         pub fn render(pd: *ProtectionDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u8) !void {
             // If we are given an ID, this PD is in fact a child PD and we have to
             // specify the ID for the root PD to use when referring to this child PD.
 
-            try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
+            if (pd.is_monitor) {
+                try std.fmt.format(writer, "{s}<monitor_protection_domain name=\"{s}\"", .{ separator, pd.name });
+            } else {
+                try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
+            }
 
             if (id) |id_val| {
                 try std.fmt.format(writer, " id=\"{}\"", .{id_val});
@@ -674,10 +743,267 @@ pub const SystemDescription = struct {
             for (pd.setvars.items) |setvar| {
                 try setvar.render(writer, child_separator);
             }
+            for (pd.os_services.items) |ossvc| {
+                try ossvc.render(writer, child_separator);
+            }
 
-            try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});
+            if (pd.is_monitor) {
+                try std.fmt.format(writer, "{s}</monitor_protection_domain>\n", .{separator});
+            } else {
+                try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});
+            }
+        }
+
+        fn pageSizeBytes(page_size: MemoryRegion.PageSize) usize {
+            return @intCast(@intFromEnum(page_size));
+        }
+
+        fn fillSvcMapping(
+            dst: *data.Resources.Monitor.SvcMapping,
+            src: *const Map,
+        ) void {
+            // const ps = src.mr.page_size orelse .small;
+            // const page_size = pageSizeBytes(ps);
+            const page_size: usize = if (src.mr.page_size) |ps|
+                pageSizeBytes(ps)
+            else
+                0x1000;
+
+            if (page_size == 0) {
+                @panic("page size cannot be zero");
+            }
+            if (src.mr.size % page_size != 0) {
+                @panic("memory region size is not a multiple of page size");
+            }
+
+            dst.* = .{
+                .vaddr = @intCast(src.vaddr),
+                .page_num = @intCast(src.mr.size / page_size),
+                .page_size = page_size,
+            };
+        }
+
+        fn fillProtoConSvc(
+            dst: *data.Resources.Monitor.ProtoConSvc,
+            src: *const OSSvc,
+        ) void {
+            dst.* = std.mem.zeroes(data.Resources.Monitor.ProtoConSvc);
+
+            dst.svc_init = true;
+            dst.svc_idx = @intCast(src.id orelse @panic("os service has no id"));
+            dst.svc_type = src.svc_type orelse @panic("os service has no svc_type");
+
+            // channels
+            if (src.channels.items.len > dst.channels.len) {
+                @panic("too many channels in os service");
+            }
+            for (src.channels.items, 0..) |ch, i| {
+                dst.channels[i] = ch;
+            }
+
+            if (src.irqs.items.len > dst.irqs.len) {
+                @panic("too many irqs in os service");
+            }
+            for (src.irqs.items, 0..) |irq, i| {
+                dst.irqs[i] = irq.id orelse @panic("os service irq has no id");
+            }
+            // mappings
+            if (src.maps.items.len > dst.mappings.len) {
+                @panic("too many mappings in os service");
+            }
+            for (src.maps.items, 0..) |map, i| {
+                fillSvcMapping(&dst.mappings[i], &map);
+            }
+
+            // data_path
+            if (src.data_name) |name| {
+                const n = @min(name.len, dst.data_path.len - 1);
+                @memcpy(dst.data_path[0..n], name[0..n]);
+                dst.data_path[n] = 0;
+            }
+        }
+
+        fn populateMonitorSvcDb(pd: *ProtectionDomain) void {
+            const svcdb = &pd.mon_svc_db.?;
+
+            // initialise monitor_svcdb_t
+            svcdb.* = .{
+                .len = 0,
+                .list = std.mem.zeroes([16]data.Resources.Monitor.ProtoConSvcDb),
+            };
+
+            var db_idx: usize = 0;
+
+            for (pd.child_pds.items) |child_pd| {
+                if (child_pd.os_services.items.len == 0) continue;
+
+                if (db_idx >= svcdb.list.len) {
+                    @panic("too many child PDs with os_services for monitor svc db");
+                }
+
+                var entry = &svcdb.list[db_idx];
+                entry.* = std.mem.zeroes(data.Resources.Monitor.ProtoConSvcDb);
+
+                entry.pd_idx = child_pd.child_id orelse @panic("child pd has no child_id");
+                entry.svc_num = @intCast(child_pd.os_services.items.len);
+
+                if (child_pd.os_services.items.len > entry.array.len) {
+                    @panic("too many os_services in child pd");
+                }
+
+                for (child_pd.os_services.items, 0..) |*os_svc, svc_idx| {
+                    fillProtoConSvc(&entry.array[svc_idx], os_svc);
+                }
+
+                db_idx += 1;
+            }
+
+            svcdb.len = db_idx;
+        }
+
+        pub fn setMonitor(pd: *ProtectionDomain) void {
+            pd.is_monitor = true;
+            if (pd.mon_svc_db == null) {
+                pd.mon_svc_db = initMonitorSvcDb();
+            }
+        }
+
+        pub fn generateSvc(pd: *ProtectionDomain, sdf: *SystemDescription, prefix: []const u8) !void {
+            if (!pd.is_monitor) return;
+
+            const full_path = try std.fs.path.join(sdf.allocator, &.{ prefix, pd.name });
+            defer sdf.allocator.free(full_path);
+
+            const full_path_data = try std.fmt.allocPrint(sdf.allocator, "{s}.svc", .{full_path});
+            defer sdf.allocator.free(full_path_data);
+
+            const serialize_file = try std.fs.cwd().createFile(full_path_data, .{});
+            defer serialize_file.close();
+
+            if (pd.mon_svc_db == null) {
+                std.debug.print("generateSvc: pd '{s}' is_monitor=true but mon_svc_db is null\n", .{pd.name});
+                @panic("monitor pd has no mon_svc_db");
+            }
+
+            populateMonitorSvcDb(pd);
+
+            try serialize_file.writeAll(std.mem.asBytes(&pd.mon_svc_db.?));
         }
     };
+
+    pub const OSSvc: type = struct {
+        allocator: Allocator,
+        /// Memory mappings
+        maps: ArrayList(Map),
+        /// The length of this array is bound by the maximum number of IRQs a PD can have.
+        irqs: ArrayList(Irq),
+        /// PD id to its parent PD
+        ppd: *ProtectionDomain,
+        /// ossvc id
+        id: ?u32,
+        /// Channel endpoint IDs
+        channels: ArrayList(u8),
+        /// serialised data (output)
+        data_name: ?[]const u8,
+        /// (unused for now...)
+        svc_name: []const u8,
+        ///
+        svc_type: ?u8,
+
+        // Matches Microkit implementation
+        const MAX_IDS: u8 = 62;
+
+        pub fn create(allocator: Allocator, ppd: *ProtectionDomain, id: u32, name: []const u8, svc_type: u8) OSSvc {
+            return OSSvc{
+                .allocator = allocator,
+                .maps = ArrayList(Map).init(allocator),
+                .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IDS) catch @panic("Could not allocate irqs"),
+                .ppd = ppd,
+                .id = id,
+                .channels = ArrayList(u8).init(allocator),
+                .svc_name = allocator.dupe(u8, name) catch @panic("Could not dupe ossvc name"),
+                .data_name = null,
+                .svc_type = svc_type,
+            };
+        }
+
+        pub fn destroy(ossvc: *OSSvc) void {
+            ossvc.maps.deinit();
+            ossvc.irqs.deinit();
+            ossvc.channels.deinit();
+            ossvc.allocator.free(ossvc.svc_name);
+            if (ossvc.data_name) |buf| { // idiomatic optional test
+                ossvc.allocator.free(buf);
+            }
+        }
+
+        pub fn addDataName(ossvc: *OSSvc, data_name: []const u8) void {
+            ossvc.data_name = ossvc.allocator.dupe(u8, data_name) catch @panic("Could not dupe ossvc data name");
+        }
+
+        pub fn allocateId(id_set: *std.bit_set.StaticBitSet(MAX_IDS), id: ?u8) !u8 {
+            if (id) |chosen_id| {
+                if (id_set.*.isSet(chosen_id)) {
+                    log.err("attempting to allocate already allocated ID '{}' '", .{chosen_id});
+                    return error.AlreadyAllocatedId;
+                } else {
+                    id_set.*.setValue(chosen_id, true);
+                    return chosen_id;
+                }
+            } else {
+                for (0..MAX_IDS) |i| {
+                    if (!id_set.*.isSet(i)) {
+                        id_set.*.setValue(i, true);
+                        return @intCast(i);
+                    }
+                }
+
+                return error.NoMoreIds;
+            }
+        }
+
+        pub fn addMap(ossvc: *OSSvc, map: Map) void {
+            ossvc.ppd.addMapReserved(map);
+            ossvc.maps.append(map) catch @panic("Could not add Map to OSSvc");
+        }
+
+        pub fn addIrq(ossvc: *OSSvc, irq: Irq) !u8 {
+            // If the IRQ ID is already set, then we check that we can allocate it with
+            // the PD.
+            if (irq.id) |id| {
+                _ = try allocateId(&ossvc.ppd.channel_ids, id);
+                try ossvc.irqs.append(irq);
+
+                return id;
+            } else {
+                var irq_with_id = irq;
+                irq_with_id.id = try allocateId(&ossvc.ppd.channel_ids, null);
+                try ossvc.irqs.append(irq_with_id);
+                return irq_with_id.id.?;
+            }
+        }
+
+        pub fn addChannel(ossvc: *OSSvc, end_id: u8) void {
+            ossvc.channels.append(end_id) catch @panic("Could not add channel to OSSvc");
+        }
+
+        // pub fn render(ossvc: *const OSSvc, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {
+        pub fn render(ossvc: *const OSSvc, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            for (ossvc.maps.items) |map| {
+                try map.render(writer, separator);
+            }
+            for (ossvc.irqs.items) |irq| {
+                try irq.render(writer, separator);
+            }
+        }
+    };
+
+    fn initMonitorSvcDb() data.Resources.Monitor.SvcDb {
+        return .{
+            .len = 0,
+            .list = std.mem.zeroes([16]data.Resources.Monitor.ProtoConSvcDb),
+        };
+    }
 
     pub const Channel = struct {
         pd_a: *ProtectionDomain,
@@ -687,6 +1013,7 @@ pub const SystemDescription = struct {
         pd_a_notify: ?bool,
         pd_b_notify: ?bool,
         pp: ?End,
+        optional: ?bool,
 
         pub const End = enum { a, b };
 
@@ -696,6 +1023,7 @@ pub const SystemDescription = struct {
             pp: ?End = null,
             pd_a_id: ?u8 = null,
             pd_b_id: ?u8 = null,
+            optional: ?bool = null,
         };
 
         pub fn create(pd_a: *ProtectionDomain, pd_b: *ProtectionDomain, options: Options) !Channel {
@@ -712,6 +1040,7 @@ pub const SystemDescription = struct {
                 .pd_a_notify = options.pd_a_notify,
                 .pd_b_notify = options.pd_b_notify,
                 .pp = options.pp,
+                .optional = options.optional,
             };
         }
 
@@ -721,7 +1050,14 @@ pub const SystemDescription = struct {
             const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
             defer allocator.free(child_separator);
 
-            try std.fmt.format(writer, "{s}<channel>\n{s}<end pd=\"{s}\" id=\"{}\"", .{ separator, child_separator, ch.pd_a.name, ch.pd_a_id });
+            try std.fmt.format(writer, "{s}<channel", .{separator});
+            if (ch.optional) |optional| {
+                if (optional) {
+                    try std.fmt.format(writer, " optional=\"true\"", .{});
+                }
+            }
+            try std.fmt.format(writer, ">\n", .{});
+            try std.fmt.format(writer, "{s}<end pd=\"{s}\" id=\"{}\"", .{ child_separator, ch.pd_a.name, ch.pd_a_id });
 
             if (ch.pd_a_notify) |notify| {
                 try std.fmt.format(writer, " notify=\"{}\"", .{notify});
@@ -1005,6 +1341,12 @@ pub const SystemDescription = struct {
         _ = try writer.write("</system>" ++ "\x00");
 
         return sdf.xml_data.items[0 .. sdf.xml_data.items.len - 1 :0];
+    }
+
+    pub fn generateSvc(sdf: *SystemDescription, prefix: []const u8) !void {
+        for (sdf.pds.items) |pd| {
+            try pd.generateSvc(sdf, prefix);
+        }
     }
 
     pub fn print(sdf: *SystemDescription) !void {
