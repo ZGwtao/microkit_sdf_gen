@@ -182,7 +182,7 @@ pub const FileSystem = struct {
             ossvc.addDataName(fmt(allocator, "fs_client_{s}.data", .{system.client.name}));
             client.addOSService(ossvc);
         } else {
-            client.destroy();
+            ossvc.destroy();
         }
     }
 
