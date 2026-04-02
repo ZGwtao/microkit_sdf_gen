@@ -170,7 +170,7 @@ pub const Serial = struct {
             ossvc.addMap(data_mr_client_map);
         }
 
-        const channel = Channel.create(server, client, .{ .optional = optional }) catch unreachable;
+        const channel = Channel.create(server, client, .{ .pd_b_optional = optional, .pd_a_optional = false }) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;

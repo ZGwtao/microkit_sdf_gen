@@ -170,7 +170,7 @@ pub const FileSystem = struct {
         system.client_config.server.queue_len = 512;
 
         const optional = options.optional orelse false;
-        const channel = Channel.create(system.fs, system.client, .{ .optional = optional }) catch @panic("failed to create connection channel");
+        const channel = Channel.create(system.fs, system.client, .{ .pd_a_optional = false, .pd_b_optional = optional }) catch @panic("failed to create connection channel");
         system.sdf.addChannel(channel);
         system.server_config.client.id = channel.pd_a_id;
         system.client_config.server.id = channel.pd_b_id;

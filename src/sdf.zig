@@ -1013,7 +1013,8 @@ pub const SystemDescription = struct {
         pd_a_notify: ?bool,
         pd_b_notify: ?bool,
         pp: ?End,
-        optional: ?bool,
+        pd_a_optional: ?bool,
+        pd_b_optional: ?bool,
 
         pub const End = enum { a, b };
 
@@ -1023,7 +1024,8 @@ pub const SystemDescription = struct {
             pp: ?End = null,
             pd_a_id: ?u8 = null,
             pd_b_id: ?u8 = null,
-            optional: ?bool = null,
+            pd_a_optional: ?bool = null,
+            pd_b_optional: ?bool = null,
         };
 
         pub fn create(pd_a: *ProtectionDomain, pd_b: *ProtectionDomain, options: Options) !Channel {
@@ -1040,7 +1042,8 @@ pub const SystemDescription = struct {
                 .pd_a_notify = options.pd_a_notify,
                 .pd_b_notify = options.pd_b_notify,
                 .pp = options.pp,
-                .optional = options.optional,
+                .pd_a_optional = options.pd_a_optional,
+                .pd_b_optional = options.pd_b_optional,
             };
         }
 
@@ -1051,11 +1054,11 @@ pub const SystemDescription = struct {
             defer allocator.free(child_separator);
 
             try std.fmt.format(writer, "{s}<channel", .{separator});
-            if (ch.optional) |optional| {
-                if (optional) {
-                    try std.fmt.format(writer, " optional=\"true\"", .{});
-                }
-            }
+            // if (ch.optional) |optional| {
+            //     if (optional) {
+            //         try std.fmt.format(writer, " optional=\"true\"", .{});
+            //     }
+            // }
             try std.fmt.format(writer, ">\n", .{});
             try std.fmt.format(writer, "{s}<end pd=\"{s}\" id=\"{}\"", .{ child_separator, ch.pd_a.name, ch.pd_a_id });
 
@@ -1065,6 +1068,14 @@ pub const SystemDescription = struct {
 
             if (ch.pp != null and ch.pp.? == .a) {
                 _ = try writer.write(" pp=\"true\"");
+            }
+
+            if (ch.pd_a_optional) |optional| {
+                if (optional) {
+                    _ = try writer.write(" optional=\"true\"");
+                } else {
+                    _ = try writer.write(" optional=\"false\"");
+                }
             }
             _ = try writer.write(" />\n");
 
@@ -1076,6 +1087,14 @@ pub const SystemDescription = struct {
 
             if (ch.pp != null and ch.pp.? == .b) {
                 _ = try writer.write(" pp=\"true\"");
+            }
+
+            if (ch.pd_b_optional) |optional| {
+                if (optional) {
+                    _ = try writer.write(" optional=\"true\"");
+                } else {
+                    _ = try writer.write(" optional=\"false\"");
+                }
             }
 
             try std.fmt.format(writer, " />\n{s}</channel>\n", .{separator});
@@ -1095,7 +1114,7 @@ pub const SystemDescription = struct {
 
         const Kind = union(enum) {
             conventional: struct {
-                irq:     u32,
+                irq: u32,
                 trigger: ?Trigger,
             },
 
@@ -1144,9 +1163,9 @@ pub const SystemDescription = struct {
                     return s_irq.irq;
                 },
                 else => {
-                    log.err("number called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("number called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -1159,9 +1178,9 @@ pub const SystemDescription = struct {
                     return i_irq.trigger;
                 },
                 else => {
-                    log.err("trigger called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("trigger called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -1175,7 +1194,7 @@ pub const SystemDescription = struct {
 
         pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .ioapic = .{
                         .ioapic = options.ioapic,
@@ -1195,7 +1214,7 @@ pub const SystemDescription = struct {
         pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, options: MsiOptions) !Irq {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .msi = .{
                         .pci_bus = pci_bus,
@@ -1237,7 +1256,7 @@ pub const SystemDescription = struct {
                 },
                 .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
-                }
+                },
             }
 
             _ = try writer.write(" />\n");
@@ -1266,7 +1285,7 @@ pub const SystemDescription = struct {
             // By the time we get here, something should have populated the 'id' field.
             std.debug.assert(ioport.id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id.?, ioport.addr, ioport.size});
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{ separator, ioport.id.?, ioport.addr, ioport.size });
         }
     };
 
