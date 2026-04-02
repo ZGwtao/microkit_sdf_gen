@@ -788,6 +788,8 @@ pub const SystemDescription = struct {
             src: *const OSSvc,
         ) void {
             dst.* = std.mem.zeroes(data.Resources.Monitor.ProtoConSvc);
+            @memset(&dst.channels, 0xff);
+            @memset(&dst.irqs, 0xff);
 
             dst.svc_init = true;
             dst.svc_idx = @intCast(src.id orelse @panic("os service has no id"));
