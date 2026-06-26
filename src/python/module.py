@@ -523,6 +523,7 @@ class SystemDescription:
             """
             c_child_id = byref(c_uint8(child_id)) if child_id else None
 
+            self.keep_alive.add(child_pd)
             id = libsdfgen.sdfgen_pd_add_child(self._obj, child_pd._obj, c_child_id)
             if id < 0:
                 raise Exception(f"failed to add child to PD '{self.name}'")
@@ -549,6 +550,7 @@ class SystemDescription:
             return id
 
         def add_ioport(self, ioport: SystemDescription.IoPort) -> int:
+            self.keep_alive.add(ioport)
             id = libsdfgen.sdfgen_pd_add_ioport(self._obj, ioport._obj)
             if id < 0:
                 raise Exception(f"failed to add I/O Port to PD '{self.name}'")
@@ -556,6 +558,7 @@ class SystemDescription:
             return id
 
         def set_virtual_machine(self, vm: SystemDescription.VirtualMachine):
+            self.keep_alive.add(vm)
             ret = libsdfgen.sdfgen_pd_set_virtual_machine(self._obj, vm._obj)
             if not ret:
                 raise Exception(f"ProtectionDomain '{self.name}' already has VirtualMachine")
