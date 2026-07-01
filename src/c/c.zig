@@ -356,7 +356,7 @@ export fn sdfgen_sddf_init(path: [*c]u8) bool {
     return true;
 }
 
-export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8, c_setvar_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.Options = .{};
     if (c_trigger != null) {
@@ -374,13 +374,16 @@ export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trig
     if (c_id != null) {
         options.id = c_id.*;
     }
+    if (c_setvar_id) |s| {
+        options.setvar_id = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    }
 
     irq.* = Irq.create(number, options);
 
     return irq;
 }
 
-export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8, c_setvar_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.IoapicOptions = .{};
     if (c_polarity != null) {
@@ -391,7 +394,7 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
                 log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic, pin, vector, c_polarity.* });
                 allocator.destroy(irq);
                 return null;
-            }
+            },
         };
         options.polarity = polarity;
     }
@@ -410,6 +413,9 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
     if (c_id != null) {
         options.id = c_id.*;
     }
+    if (c_setvar_id) |s| {
+        options.setvar_id = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    }
     options.ioapic = ioapic;
 
     irq.* = Irq.createIoapic(pin, vector, options) catch |e| {
@@ -421,11 +427,14 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
     return irq;
 }
 
-export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8, c_setvar_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.MsiOptions = .{};
     if (c_id != null) {
         options.id = c_id.*;
+    }
+    if (c_setvar_id) |s| {
+        options.setvar_id = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
     }
 
     irq.* = Irq.createMsi(pci_bus, pci_device, pci_func, vector, handle, options) catch |e| {
@@ -439,6 +448,9 @@ export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vecto
 
 export fn sdfgen_irq_destroy(c_irq: *align(8) anyopaque) void {
     const irq: *Irq = @ptrCast(c_irq);
+    if (irq.setvar_id) |s| {
+        allocator.free(s);
+    }
     allocator.destroy(irq);
 }
 
@@ -500,7 +512,7 @@ export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     allocator.destroy(mr);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, name: [*c]u8, size: u64) ?*anyopaque {
+export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: [*c]u8) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
@@ -514,20 +526,16 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
         perms.execute = true;
     }
 
-    const map = allocator.create(Map) catch @panic("OOM");
-    // TODO: I think we got some memory problems if we're dereferencing this stuff since
-    // we need MemoryRegion to still be valid the whole time since we depend on it
-    if (size == 0) {
-        map.* = Map.create(mr.*, vaddr, perms, .{ .cached = cached });
-    } else {
-        const name_slice: ?[]const u8 =
-            if (name) |n| std.mem.span(n) else null;
-
-        map.* = Map.create(mr.*, vaddr, perms, .{
-            .cached = cached,
-            .setvar_vaddr = name_slice,
-        });
+    var options: Map.Options = .{ .cached = cached };
+    if (c_setvar_vaddr != null) {
+        options.setvar_vaddr = allocator.dupe(u8, std.mem.span(c_setvar_vaddr)) catch @panic("OOM");
     }
+    if (c_setvar_size != null) {
+        options.setvar_size = allocator.dupe(u8, std.mem.span(c_setvar_size)) catch @panic("OOM");
+    }
+
+    const map = allocator.create(Map) catch @panic("OOM");
+    map.* = Map.create(mr.*, vaddr, perms, options);
 
     return map;
 }
@@ -539,10 +547,16 @@ export fn sdfgen_map_get_vaddr(c_map: *align(8) anyopaque) u64 {
 
 export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     const map: *Map = @ptrCast(c_map);
+    if (map.setvar_vaddr) |s| {
+        allocator.free(s);
+    }
+    if (map.setvar_size) |s| {
+        allocator.free(s);
+    }
     allocator.destroy(map);
 }
 
-export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8) ?*anyopaque {
+export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8, c_pd_a_setvar_id: [*c]u8, c_pd_b_setvar_id: [*c]u8) ?*anyopaque {
     const pd_a: *Pd = @ptrCast(c_pd_a);
     const pd_b: *Pd = @ptrCast(c_pd_b);
 
@@ -570,6 +584,12 @@ export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) a
         };
         options.pp = pp;
     }
+    if (c_pd_a_setvar_id) |s| {
+        options.pd_a_setvar_id = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    }
+    if (c_pd_b_setvar_id) |s| {
+        options.pd_b_setvar_id = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    }
 
     const ch = allocator.create(Channel) catch @panic("OOM");
     ch.* = Channel.create(pd_a, pd_b, options) catch |e| {
@@ -592,6 +612,12 @@ export fn sdfgen_channel_get_pd_b_id(c_ch: *align(8) anyopaque) u8 {
 
 export fn sdfgen_channel_destroy(c_ch: *align(8) anyopaque) void {
     const ch: *Channel = @ptrCast(c_ch);
+    if (ch.pd_a_setvar_id) |s| {
+        allocator.free(s);
+    }
+    if (ch.pd_b_setvar_id) |s| {
+        allocator.free(s);
+    }
     allocator.destroy(ch);
 }
 
@@ -604,12 +630,7 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
 export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const timer = allocator.create(sddf.Timer) catch @panic("OOM");
-    timer.* = sddf.Timer.init(
-        allocator,
-        sdf,
-        if (c_device) |raw| @ptrCast(raw) else null,
-        @ptrCast(driver)
-    );
+    timer.* = sddf.Timer.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver));
 
     return timer;
 }
@@ -662,7 +683,7 @@ export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) an
     }
     const serial = allocator.create(sddf.Serial) catch @panic("OOM");
     serial.* = sddf.Serial.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), options) catch |e| {
-        log.err("failed to initialiase serial system: {any}", .{ e });
+        log.err("failed to initialiase serial system: {any}", .{e});
         allocator.destroy(serial);
         return null;
     };
@@ -792,12 +813,11 @@ export fn sdfgen_sddf_gpio_serialise_config(system: *align(8) anyopaque, output_
     return true;
 }
 
-
 export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
     blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
-        log.err("failed to initialiase blk system: {any}", .{ e });
+        log.err("failed to initialiase blk system: {any}", .{e});
         allocator.destroy(blk);
         return null;
     };
@@ -849,19 +869,20 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_vswitch: ?*align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
+    const vswitch: ?*Pd = if (c_vswitch) |p| @ptrCast(p) else null;
     const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
     const options: sddf.Net.Options = .{
         .rx_dma_mr = rx_dma_mr,
     };
-    net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
+    net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), vswitch, options);
 
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool, vswitch: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
@@ -869,6 +890,7 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
     }
     options.rx = rx;
     options.tx = tx;
+    options.vswitch = vswitch;
     net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
@@ -877,19 +899,44 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
             sddf.Net.Error.DuplicateMacAddr => return 101,
             sddf.Net.Error.InvalidMacAddr => return 102,
             sddf.Net.Error.InvalidOptions => return 103,
+            sddf.Net.Error.InvalidVSwitch => return 104,
+            sddf.Net.Error.InvalidVSwitchCopier => return 105,
+            sddf.Net.Error.InvalidBufferNumber => return 107,
             // Should never happen when adding a client
-            sddf.Net.Error.NotConnected => @panic("internal error"),
+            else => @panic("internal error"),
         }
     };
 
     return 0;
 }
 
-export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bool {
+export fn sdfgen_sddf_net_add_acl_rule(system: *align(8) anyopaque, client0: *align(8) anyopaque, client1: *align(8) anyopaque, zeroToOne: bool, oneToZero: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
-    net.connect() catch return false;
 
-    return true;
+    net.addAclRule(@ptrCast(client0), @ptrCast(client1), zeroToOne, oneToZero) catch |e| {
+        switch (e) {
+            sddf.Net.Error.DuplicateClient => return 1,
+            sddf.Net.Error.InvalidClient => return 2,
+            sddf.Net.Error.InvalidVSwitch => return 104,
+            // Should be always called after connect()
+            sddf.Net.Error.NotConnected => @panic("internal error"),
+            else => @panic("impossible error reached"),
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+    const net: *sddf.Net = @ptrCast(system);
+    net.connect() catch |e| {
+        switch (e) {
+            sddf.Net.Error.InvalidClientNumber => return 106,
+            else => @panic("impossible error reached"),
+        }
+    };
+
+    return 0;
 }
 
 export fn sdfgen_sddf_net_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
@@ -946,10 +993,11 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_vmm(c_sdf: *align(8) anyopaque, vmm_pd: *align(8) anyopaque, vm: *align(8) anyopaque, c_dtb: *align(8) anyopaque, dtb_size: u64, one_to_one_ram: bool) *anyopaque {
+export fn sdfgen_vmm(c_sdf: *align(8) anyopaque, vmm_pd: *align(8) anyopaque, vm: *align(8) anyopaque, c_dtb: ?*align(8) anyopaque, dtb_size: u64, one_to_one_ram: bool) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const vmm = allocator.create(Vmm) catch @panic("OOM");
-    vmm.* = Vmm.init(allocator, sdf, @ptrCast(vmm_pd), @ptrCast(vm), @ptrCast(c_dtb), dtb_size, .{
+    const dtb_ptr: ?*dtb.Node = if (c_dtb == null) null else @ptrCast(c_dtb);
+    vmm.* = Vmm.init(allocator, sdf, @ptrCast(vmm_pd), @ptrCast(vm), dtb_ptr, dtb_size, .{
         .one_to_one_ram = one_to_one_ram,
     });
 
@@ -1030,13 +1078,14 @@ export fn sdfgen_vmm_add_virtio_mmio_blk(c_vmm: *align(8) anyopaque, c_device: *
     return true;
 }
 
-export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *align(8) anyopaque, net: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8) bool {
+export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *align(8) anyopaque, net: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, vswitch: bool) bool {
     const vmm: *Vmm = @ptrCast(c_vmm);
     const device: *dtb.Node = @ptrCast(c_device);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
         options.mac_addr = std.mem.span(a);
     }
+    options.vswitch = vswitch;
     vmm.addVirtioMmioNet(device, @ptrCast(net), @ptrCast(copier), options) catch |e| {
         log.err("failed to add virtIO MMIO net device '{s}' to VMM '{s}': {any}", .{ device.name, vmm.vmm.name, e });
         return false;

@@ -90,9 +90,9 @@ typedef enum {
     IRQ_IOAPIC_POLARITY_ACTIVE_HIGH = 1,
 } sdfgen_irq_ioapic_polarity_t;
 
-void *sdfgen_irq_create(uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id);
-void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint8_t *id);
-void *sdfgen_irq_msi_create(uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id);
+void *sdfgen_irq_create(uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id, char *setvar_vaddr, char *setvar_size);
+void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint8_t *id, char *setvar_vaddr, char *setvar_size);
+void *sdfgen_irq_msi_create(uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id, char *setvar_vaddr, char *setvar_size);
 void sdfgen_irq_destroy(void *irq);
 
 void *sdfgen_ioport_create(uint16_t addr, uint16_t size, uint8_t *id);
@@ -104,7 +104,7 @@ uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);
 
-void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached, char *setvaddr, uint64_t size);
+void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached, char *setvar_vaddr, char *setvar_size);
 uint64_t sdfgen_map_get_vaddr(void *map);
 void *sdfgen_map_destroy(void *map);
 
@@ -118,6 +118,10 @@ typedef enum {
     SDDF_ERROR_NET_DUPLICATE_MAC_ADDR = 101,
     SDDF_ERROR_NET_INVALID_MAC_ADDR = 102,
     SDDF_ERROR_NET_INVALID_OPTIONS = 103,
+    SDDF_ERROR_NET_INVALID_VSWITCH = 104,
+    SDDF_ERROR_NET_INVALID_VSWITCH_COPIER = 105,
+    SDDF_ERROR_NET_INVALID_CLIENT_NUMBER = 106,
+    SDDF_ERROR_NET_INVALID_BUFFER_NUMBER = 107,
     SDDF_ERROR_GPIO_INVALID_OPTIONS = 203
 } sdfgen_sddf_status_t;
 
@@ -152,10 +156,11 @@ sdfgen_sddf_status_t sdfgen_sddf_blk_add_client(void *system, void *client, uint
 bool sdfgen_sddf_blk_connect(void *system);
 bool sdfgen_sddf_blk_serialise_config(void *system, char *output_dir);
 
-void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx, void *rx_dma_mr);
+void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx, void *vswitch, void *rx_dma_mr);
 void sdfgen_sddf_net_destroy(void *system);
-sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, uint8_t mac_addr[6], bool rx, bool tx);
-bool sdfgen_sddf_net_connect(void *system);
+sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, uint8_t mac_addr[6], bool rx, bool tx, bool vswitch);
+sdfgen_sddf_status_t sdfgen_sddf_net_add_acl_rule(void *system, void *client0, void *client1, bool zeroToOne, bool oneToZero);
+sdfgen_sddf_status_t sdfgen_sddf_net_connect(void *system);
 bool sdfgen_sddf_net_serialise_config(void *system, char *output_dir);
 
 void *sdfgen_sddf_gpu(void *sdf, void *device, void *driver, void *virt);

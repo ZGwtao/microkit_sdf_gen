@@ -6,7 +6,7 @@ from ctypes import (
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum
-from abc import ABC, abstractmethod
+from abc import ABC
 
 class SddfStatus(IntEnum):
     OK = 0,
@@ -15,6 +15,10 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    NET_INVALID_VSWITCH = 104,
+    NET_INVALID_VSWITCH_COPIER = 105,
+    NET_INVALID_CLIENT_NUMBER = 106,
+    NET_INVALID_BUFFER_NUMBER = 107,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -74,6 +78,8 @@ libsdfgen.sdfgen_channel_create.argtypes = [
     POINTER(c_bool),
     POINTER(c_bool),
     POINTER(c_uint8),
+    c_char_p,
+    c_char_p,
 ]
 libsdfgen.sdfgen_channel_destroy.restype = None
 libsdfgen.sdfgen_channel_destroy.argtypes = [c_void_p]
@@ -83,7 +89,7 @@ libsdfgen.sdfgen_channel_get_pd_b_id.restype = c_uint8
 libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
-libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p, c_uint64]
+libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p, c_char_p]
 libsdfgen.sdfgen_map_get_vaddr.restype = c_uint64
 libsdfgen.sdfgen_map_get_vaddr.argtypes = [c_void_p]
 libsdfgen.sdfgen_map_destroy.restype = None
@@ -102,11 +108,11 @@ libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_irq_create.restype = c_void_p
-libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8), c_char_p]
 libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
-libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8), c_char_p]
 libsdfgen.sdfgen_irq_msi_create.restype = c_void_p
-libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8), c_char_p]
 libsdfgen.sdfgen_irq_destroy.restype = None
 libsdfgen.sdfgen_irq_destroy.argtypes = [c_void_p]
 
@@ -230,21 +236,24 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
-libsdfgen.sdfgen_sddf_net_add_client_with_copier.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_client_with_copier.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_void_p,
     c_void_p,
     c_char_p,
     c_bool,
+    c_bool,
     c_bool
 ]
+libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_uint8
+libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
-libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
+libsdfgen.sdfgen_sddf_net_connect.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_connect.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_net_serialise_config.restype = c_bool
@@ -298,7 +307,7 @@ libsdfgen.sdfgen_vmm_add_virtio_mmio_console.argtypes = [c_void_p, c_void_p, c_v
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.restype = c_bool
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_vmm_add_virtio_mmio_net.restype = c_bool
-libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
+libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p, c_bool]
 libsdfgen.sdfgen_vmm_connect.restype = c_bool
 libsdfgen.sdfgen_vmm_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
@@ -517,6 +526,7 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
             if is_monitor is not None:
                 libsdfgen.sdfgen_pd_set_monitor(self._obj, is_monitor)
+            self.keep_alive = set()
 
         @property
         def name(self) -> str:
@@ -532,6 +542,7 @@ class SystemDescription:
             """
             c_child_id = byref(c_uint8(child_id)) if child_id else None
 
+            self.keep_alive.add(child_pd)
             id = libsdfgen.sdfgen_pd_add_child(self._obj, child_pd._obj, c_child_id)
             if id < 0:
                 raise Exception(f"failed to add child to PD '{self.name}'")
@@ -545,9 +556,12 @@ class SystemDescription:
             return libsdfgen.sdfgen_pd_get_map_vaddr(self._obj, mr._obj)
 
         def add_map(self, map: SystemDescription.Map):
+            self.keep_alive.add(map)
             libsdfgen.sdfgen_pd_add_map(self._obj, map._obj)
 
         def add_irq(self, irq: SystemDescription.Irq) -> int:
+            self.keep_alive.add(irq)
+
             id = libsdfgen.sdfgen_pd_add_irq(self._obj, irq._obj)
             if id < 0:
                 raise Exception(f"failed to add IRQ to PD '{self.name}'")
@@ -555,6 +569,7 @@ class SystemDescription:
             return id
 
         def add_ioport(self, ioport: SystemDescription.IoPort) -> int:
+            self.keep_alive.add(ioport)
             id = libsdfgen.sdfgen_pd_add_ioport(self._obj, ioport._obj)
             if id < 0:
                 raise Exception(f"failed to add I/O Port to PD '{self.name}'")
@@ -562,6 +577,7 @@ class SystemDescription:
             return id
 
         def set_virtual_machine(self, vm: SystemDescription.VirtualMachine):
+            self.keep_alive.add(vm)
             ret = libsdfgen.sdfgen_pd_set_virtual_machine(self._obj, vm._obj)
             if not ret:
                 raise Exception(f"ProtectionDomain '{self.name}' already has VirtualMachine")
@@ -640,15 +656,16 @@ class SystemDescription:
             *,
             cached: bool = True,
             setvar_vaddr: Optional[str] = None,
+            setvar_size: Optional[str] = None,
         ) -> None:
             c_perms = SystemDescription.Map._perms_to_c_bindings(perms)
+            c_setvar_vaddr = c_char_p(0)
             if setvar_vaddr is not None:
-                c_vaddr_str = setvar_vaddr.encode("utf-8")
-                vaddr_len = len(c_vaddr_str)
-            else:
-                c_vaddr_str = None
-                vaddr_len = 0
-            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached, c_vaddr_str, vaddr_len)
+                c_setvar_vaddr = c_char_p(setvar_vaddr.encode("utf-8"))
+            c_setvar_size = c_char_p(0)
+            if setvar_size is not None:
+                c_setvar_size = c_char_p(setvar_size.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached, c_setvar_vaddr, c_setvar_size)
             if self._obj is None:
                 raise Exception("failed to create mapping")
 
@@ -706,10 +723,15 @@ class SystemDescription:
         def __init__(
             self,
             irq: int,
+            *,
             trigger: Optional[Trigger] = None,
             id: Optional[int] = None,
+            setvar_id: Optional[str] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_create(irq, ffi_uint32_ptr(trigger), ffi_uint8_ptr(id))
+            c_setvar_id = c_char_p(0)
+            if setvar_id is not None:
+                c_setvar_id = c_char_p(setvar_id.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_irq_create(irq, ffi_uint32_ptr(trigger), ffi_uint8_ptr(id), c_setvar_id)
             if self._obj is None:
                 raise Exception("failed to create IRQ - Conventional type")
 
@@ -734,8 +756,12 @@ class SystemDescription:
             trigger: Optional[Trigger] = None,
             polarity: Optional[Polarity] = None,
             id: Optional[int] = None,
+            setvar_id: Optional[str] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_ioapic_create(ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), vector, ffi_uint8_ptr(id))
+            c_setvar_id = c_char_p(0)
+            if setvar_id is not None:
+                c_setvar_id = c_char_p(setvar_id.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_irq_ioapic_create(ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), vector, ffi_uint8_ptr(id), c_setvar_id)
             if self._obj is None:
                 raise Exception("failed to create IRQ - IOAPIC type")
 
@@ -751,8 +777,12 @@ class SystemDescription:
             vector: int,
             handle: int,
             id: Optional[int] = None,
+            setvar_id: Optional[str] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_msi_create(pci_bus, pci_device, pci_func, vector, handle, ffi_uint8_ptr(id))
+            c_setvar_id = c_char_p(0)
+            if setvar_id is not None:
+                c_setvar_id = c_char_p(setvar_id.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_irq_msi_create(pci_bus, pci_device, pci_func, vector, handle, ffi_uint8_ptr(id), c_setvar_id)
             if self._obj is None:
                 raise Exception("failed to create IRQ - MSI type")
 
@@ -789,6 +819,8 @@ class SystemDescription:
             pp_b: Optional[bool] = None,
             notify_a: Optional[bool] = None,
             notify_b: Optional[bool] = None,
+            pd_a_setvar_id: Optional[str] = None,
+            pd_b_setvar_id: Optional[str] = None,
         ) -> None:
             c_pp = None
             if pp_a is not None:
@@ -799,6 +831,14 @@ class SystemDescription:
             if pp_a is not None and pp_b is not None:
                 raise Exception("attempting to create channel with PP on both ends")
 
+            c_pd_a_setvar_id = c_char_p(0)
+            if pd_a_setvar_id is not None:
+                c_pd_a_setvar_id = c_char_p(pd_a_setvar_id.encode("utf-8"))
+
+            c_pd_b_setvar_id = c_char_p(0)
+            if pd_b_setvar_id is not None:
+                c_pd_b_setvar_id = c_char_p(pd_b_setvar_id.encode("utf-8"))
+
             self._obj = libsdfgen.sdfgen_channel_create(
                 a._obj,
                 b._obj,
@@ -807,6 +847,8 @@ class SystemDescription:
                 ffi_bool_ptr(notify_a),
                 ffi_bool_ptr(notify_b),
                 ffi_uint8_ptr(c_pp),
+                c_pd_a_setvar_id,
+                c_pd_b_setvar_id,
             )
             if self._obj is None:
                 raise Exception("failed to create channel")
@@ -868,18 +910,22 @@ class SystemDescription:
         Create a System Description
         """
         self._obj = libsdfgen.sdfgen_create(arch.value, paddr_top)
+        self.keep_alive = set()
 
     def __del__(self):
         if hasattr(self, "_obj"):
             libsdfgen.sdfgen_destroy(self._obj)
 
     def add_pd(self, pd: ProtectionDomain):
+        self.keep_alive.add(pd)
         libsdfgen.sdfgen_add_pd(self._obj, pd._obj)
 
     def add_mr(self, mr: MemoryRegion):
+        self.keep_alive.add(mr)
         libsdfgen.sdfgen_add_mr(self._obj, mr._obj)
 
     def add_channel(self, ch: Channel):
+        self.keep_alive.add(ch)
         libsdfgen.sdfgen_add_channel(self._obj, ch._obj)
 
     def render(self) -> str:
@@ -1087,19 +1133,25 @@ class Sddf:
             driver: SystemDescription.ProtectionDomain,
             virt_tx: SystemDescription.ProtectionDomain,
             virt_rx: SystemDescription.ProtectionDomain,
+            *,
+            vswitch: Optional[SystemDescription.ProtectionDomain] = None,
             rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
         ) -> None:
             if device is None:
                 device_obj = None
             else:
                 device_obj = device._obj
+            if vswitch is None:
+                vswitch_obj = None
+            else:
+                vswitch_obj = vswitch._obj
             if rx_dma_mr is None:
                 rx_dma_mr_obj = None
             else:
                 rx_dma_mr_obj = rx_dma_mr._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, vswitch_obj, rx_dma_mr_obj
             )
 
         def add_client_with_copier(
@@ -1109,7 +1161,8 @@ class Sddf:
             *,
             mac_addr: Optional[str] = None,
             rx: Optional[bool] = None,
-            tx: Optional[bool] = None
+            tx: Optional[bool] = None,
+            vswitch: Optional[bool] = None
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -1137,8 +1190,12 @@ class Sddf:
                 tx_arg = True
             else:
                 tx_arg = False
+            if vswitch is None or vswitch is False:
+                vswitch_arg = False
+            else:
+                vswitch_arg = True
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg
+                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg, vswitch_arg
             )
             if ret == SddfStatus.OK:
                 return
@@ -1152,11 +1209,40 @@ class Sddf:
                 raise Exception(f"duplicate MAC address given '{mac_addr}'")
             elif ret == SddfStatus.NET_INVALID_OPTIONS:
                 raise Exception(f"client must have rx or tx access")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH:
+                raise Exception(f"net system has no vswitch")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH_COPIER:
+                raise Exception(f"vswitch clients require a copier")
+            elif ret == SddfStatus.NET_INVALID_BUFFER_NUMBER:
+                raise Exception(f"clients may only have a power of two number of buffers")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        def add_acl_rule(
+                self,
+                client0: SystemDescription.ProtectionDomain,
+                client1: SystemDescription.ProtectionDomain,
+                zeroToOne: bool = True,
+                oneToZero: bool = True
+            ) -> None:
+            ret = libsdfgen.sdfgen_sddf_net_add_acl_rule(self._obj, client0._obj, client1._obj, c_bool(zeroToOne), c_bool(oneToZero))
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client0}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"either client not connected to vswitch")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH:
+                raise Exception(f"net system has no vswitch")
             else:
                 raise Exception(f"internal error: {ret}")
 
         def connect(self) -> bool:
-            return libsdfgen.sdfgen_sddf_net_connect(self._obj)
+            ret = libsdfgen.sdfgen_sddf_net_connect(self._obj)
+            if ret == SddfStatus.OK:
+                return True
+            elif ret == SddfStatus.NET_INVALID_CLIENT_NUMBER:
+                raise Exception(f"can't connect net system with no clients!")
 
         def serialise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))
@@ -1325,11 +1411,16 @@ class Vmm:
         sdf: SystemDescription,
         vmm: SystemDescription.ProtectionDomain,
         vm: SystemDescription.VirtualMachine,
-        dtb: DeviceTree,
+        dtb: Optional[DeviceTree],
         *,
         one_to_one_ram: bool = False,
     ):
-        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb._obj, dtb.size, one_to_one_ram)
+        dtb_obj = None
+        dtb_size = 0
+        if dtb is not None:
+            dtb_obj = dtb._obj
+            dtb_size = dtb.size
+        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb_obj, dtb_size, one_to_one_ram)
 
     def add_passthrough_device(
         self,
@@ -1377,8 +1468,9 @@ class Vmm:
         self,
         device: DeviceTree.Node,
         net: Sddf.Net,
-        copier: SystemDescription.ProtectionDomain,
         *,
+        copier: Optional[SystemDescription.ProtectionDomain],
+        vswitch: Optional[bool] = None,
         mac_addr: Optional[str] = None
     ):
         if mac_addr is not None and len(mac_addr) != 17:
@@ -1390,7 +1482,18 @@ class Vmm:
         if mac_addr is not None:
             c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
 
-        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier._obj, c_mac_addr)
+        if copier is None:
+            copier_obj = None
+        else:
+            copier_obj = copier._obj
+        if vswitch is None or vswitch is False:
+            vswitch_arg = False
+        else:
+            vswitch_arg = True
+
+        ret = libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, c_mac_addr, vswitch_arg)
+        if not ret:
+            raise Exception(f"could not add device '{device}'")
 
     def connect(self) -> bool:
         return libsdfgen.sdfgen_vmm_connect(self._obj)
