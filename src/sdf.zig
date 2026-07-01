@@ -1059,7 +1059,6 @@ pub const SystemDescription = struct {
                 .pd_b_optional = options.pd_b_optional,
                 .pd_a_setvar_id = options.pd_a_setvar_id,
                 .pd_b_setvar_id = options.pd_b_setvar_id,
-
             };
         }
 
@@ -1115,6 +1114,7 @@ pub const SystemDescription = struct {
                 } else {
                     _ = try writer.write(" optional=\"false\"");
                 }
+            }
             if (ch.pd_b_setvar_id) |setvar_id| {
                 try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
             }
