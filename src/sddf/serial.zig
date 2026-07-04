@@ -175,7 +175,7 @@ pub const Serial = struct {
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
         if (optional) {
-            ossvc.addChannel(client_conn.id);
+            ossvc.addChannelNotification(client_conn.id);
         }
     }
 

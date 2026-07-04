@@ -795,19 +795,28 @@ pub const SystemDescription = struct {
             src: *const OSSvc,
         ) void {
             dst.* = std.mem.zeroes(data.Resources.Monitor.ProtoConSvc);
-            @memset(&dst.channels, 0xff);
+            @memset(&dst.notifications, 0xff);
+            @memset(&dst.ppcs, 0xff);
             @memset(&dst.irqs, 0xff);
+            @memset(&dst.ioports, 0xff);
 
             dst.svc_init = true;
             dst.svc_idx = @intCast(src.id orelse @panic("os service has no id"));
             dst.svc_type = src.svc_type orelse @panic("os service has no svc_type");
 
             // channels
-            if (src.channels.items.len > dst.channels.len) {
+            if (src.notifications.items.len > dst.notifications.len) {
                 @panic("too many channels in os service");
             }
-            for (src.channels.items, 0..) |ch, i| {
-                dst.channels[i] = ch;
+            for (src.notifications.items, 0..) |ch, i| {
+                dst.notifications[i] = ch;
+            }
+
+            if (src.ppcs.items.len > dst.ppcs.len) {
+                @panic("too many ppcs in os service");
+            }
+            for (src.ppcs.items, 0..) |ch, i| {
+                dst.ppcs[i] = ch;
             }
 
             if (src.irqs.items.len > dst.irqs.len) {
@@ -816,6 +825,14 @@ pub const SystemDescription = struct {
             for (src.irqs.items, 0..) |irq, i| {
                 dst.irqs[i] = irq.id orelse @panic("os service irq has no id");
             }
+
+            if (src.ioports.items.len > dst.ioports.len) {
+                @panic("too many ioports in os service");
+            }
+            for (src.ioports.items, 0..) |ioport, i| {
+                dst.ioports[i] = ioport;
+            }
+
             // mappings
             if (src.maps.items.len > dst.mappings.len) {
                 @panic("too many mappings in os service");
@@ -911,7 +928,11 @@ pub const SystemDescription = struct {
         /// ossvc id
         id: ?u32,
         /// Channel endpoint IDs
-        channels: ArrayList(u8),
+        ppcs: ArrayList(u8),
+        /// Channel notifications IDs
+        notifications: ArrayList(u8),
+        /// Channel ioports IDs
+        ioports: ArrayList(u8),
         /// serialised data (output)
         data_name: ?[]const u8,
         /// (unused for now...)
@@ -929,7 +950,9 @@ pub const SystemDescription = struct {
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IDS) catch @panic("Could not allocate irqs"),
                 .ppd = ppd,
                 .id = id,
-                .channels = ArrayList(u8).init(allocator),
+                .ppcs = ArrayList(u8).init(allocator),
+                .notifications = ArrayList(u8).init(allocator),
+                .ioports = ArrayList(u8).init(allocator),
                 .svc_name = allocator.dupe(u8, name) catch @panic("Could not dupe ossvc name"),
                 .data_name = null,
                 .svc_type = svc_type,
@@ -939,7 +962,9 @@ pub const SystemDescription = struct {
         pub fn destroy(ossvc: *OSSvc) void {
             ossvc.maps.deinit();
             ossvc.irqs.deinit();
-            ossvc.channels.deinit();
+            ossvc.ppcs.deinit();
+            ossvc.notifications.deinit();
+            ossvc.ioports.deinit();
             ossvc.allocator.free(ossvc.svc_name);
             if (ossvc.data_name) |buf| { // idiomatic optional test
                 ossvc.allocator.free(buf);
@@ -992,8 +1017,16 @@ pub const SystemDescription = struct {
             }
         }
 
-        pub fn addChannel(ossvc: *OSSvc, end_id: u8) void {
-            ossvc.channels.append(end_id) catch @panic("Could not add channel to OSSvc");
+        pub fn addChannelPPC(ossvc: *OSSvc, end_id: u8) void {
+            ossvc.ppcs.append(end_id) catch @panic("Could not add ppc channel to OSSvc");
+        }
+
+        pub fn addChannelNotification(ossvc: *OSSvc, end_id: u8) void {
+            ossvc.notifications.append(end_id) catch @panic("Could not add notification channel to OSSvc");
+        }
+
+        pub fn addIoPort(ossvc: *OSSvc, end_id: u8) void {
+            ossvc.ioports.append(end_id) catch @panic("Could not add ioport to OSSvc");
         }
 
         // pub fn render(ossvc: *const OSSvc, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u32) !void {

@@ -175,7 +175,7 @@ pub const FileSystem = struct {
         system.server_config.client.id = channel.pd_a_id;
         system.client_config.server.id = channel.pd_b_id;
         if (optional) {
-            ossvc.addChannel(system.client_config.server.id);
+            ossvc.addChannelNotification(system.client_config.server.id);
         }
 
         if (optional) {

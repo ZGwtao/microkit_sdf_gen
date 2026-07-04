@@ -426,8 +426,10 @@ pub const Resources = struct {
             svc_init: bool,
             svc_idx: u8,
             svc_type: u8,
-            channels: [4]u8,
+            notifications: [4]u8,
+            ppcs: [4]u8,
             irqs: [4]u8,
+            ioports: [4]u8,
             mappings: [4]SvcMapping,
             data_path: [64]u8,
         };

@@ -112,7 +112,7 @@ pub const Timer = struct {
                 ossvc.id = client.allocateSvcId(null) catch {
                     @panic("failed to allocate id");
                 };
-                ossvc.addChannel(system.client_configs.items[i].driver_id);
+                ossvc.addChannelPPC(system.client_configs.items[i].driver_id);
                 ossvc.addDataName(fmt(system.allocator, "timer_client_{s}.data", .{client.name}));
                 client.addOSService(ossvc);
             }
