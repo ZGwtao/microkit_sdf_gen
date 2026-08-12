@@ -434,6 +434,8 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
+        /// Render this PD as a dynamic Microkit template PD.
+        template: bool,
         /// Emit microkit symbols
         sym_emit: ?bool,
 
@@ -455,6 +457,7 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
+            template: bool = false,
             sym_emit: ?bool = null,
         };
 
@@ -481,6 +484,7 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .template = options.template,
                 .sym_emit = options.sym_emit,
             };
         }
@@ -620,7 +624,8 @@ pub const SystemDescription = struct {
             // If we are given an ID, this PD is in fact a child PD and we have to
             // specify the ID for the root PD to use when referring to this child PD.
 
-            try std.fmt.format(writer, "{s}<protection_domain name=\"{s}\"", .{ separator, pd.name });
+            const tag = if (pd.template) "template" else "protection_domain";
+            try std.fmt.format(writer, "{s}<{s} name=\"{s}\"", .{ separator, tag, pd.name });
 
             if (id) |id_val| {
                 try std.fmt.format(writer, " id=\"{}\"", .{id_val});
@@ -690,7 +695,7 @@ pub const SystemDescription = struct {
                 try setvar.render(writer, child_separator);
             }
 
-            try std.fmt.format(writer, "{s}</protection_domain>\n", .{separator});
+            try std.fmt.format(writer, "{s}</{s}>\n", .{ separator, tag });
         }
     };
 
