@@ -772,6 +772,7 @@ pub const SystemDescription = struct {
 
         pub const Type = struct {
             pub const serial: u8 = 1;
+            pub const network: u8 = 2;
             pub const timer: u8 = 3;
         };
 
