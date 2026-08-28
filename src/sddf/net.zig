@@ -69,6 +69,7 @@ pub const Net = struct {
     virt_rx: *Pd,
     virt_tx: *Pd,
     maybe_vswitch: ?*Pd,
+    maybe_vswitch_orchestrator: ?*Pd,
     copiers: std.array_list.Managed(?*Pd),
     clients: std.array_list.Managed(*Pd),
 
@@ -77,6 +78,7 @@ pub const Net = struct {
     virt_rx_config: ConfigResources.Net.VirtRx,
     virt_tx_config: ConfigResources.Net.VirtTx,
     vswitch_config: ConfigResources.Net.VSwitch,
+    vswitch_orchestrator_config: ConfigResources.Net.VSwitchOrchestrator,
     copy_configs: std.array_list.Managed(ConfigResources.Net.Copy),
     client_configs: std.array_list.Managed(ConfigResources.Net.Client),
 
@@ -87,7 +89,11 @@ pub const Net = struct {
     maybe_rx_dma_mr: ?*Mr,
     client_info: std.array_list.Managed(ClientInfo),
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, virt_rx: *Pd, vswitch: ?*Pd, options: Options) Net {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, virt_rx: *Pd, vswitch: ?*Pd, vswitch_orchestrator: ?*Pd, options: Options) Net {
+        if (vswitch_orchestrator != null and vswitch == null) {
+            @panic("vswitch orchestrator requires a vswitch");
+        }
+
         if (options.rx_dma_mr) |exists_rx_dma| {
             if (exists_rx_dma.*.paddr == null) {
                 @panic("rx dma region must have a physical address");
@@ -113,11 +119,13 @@ pub const Net = struct {
             .virt_rx = virt_rx,
             .virt_tx = virt_tx,
             .maybe_vswitch = vswitch,
+            .maybe_vswitch_orchestrator = vswitch_orchestrator,
 
             .driver_config = std.mem.zeroInit(ConfigResources.Net.Driver, .{}),
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Net.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Net.VirtTx, .{}),
             .vswitch_config = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{}),
+            .vswitch_orchestrator_config = std.mem.zeroInit(ConfigResources.Net.VSwitchOrchestrator, .{}),
             .copy_configs = std.array_list.Managed(ConfigResources.Net.Copy).init(allocator),
             .client_configs = std.array_list.Managed(ConfigResources.Net.Client).init(allocator),
 
@@ -686,6 +694,13 @@ pub const Net = struct {
             system.vswitchRxConnect(rx_dma_mr, num_vswitch_client_buffers + system.rx_buffers);
             system.vswitchTxConnect(num_vswitch_client_buffers);
 
+            if (system.maybe_vswitch_orchestrator) |vswitch_orchestrator| {
+                const channel = Channel.create(system.maybe_vswitch.?, vswitch_orchestrator, .{ .pd_a_notify = false, .pd_b_notify = false, .pp = .b }) catch @panic("failed to create vswitch orchestrator channel");
+                system.sdf.addChannel(channel);
+                system.vswitch_config.orchestrator_id = channel.pd_a_id;
+                system.vswitch_orchestrator_config.vswitch_id = channel.pd_b_id;
+            }
+
             system.virt_rx_config.num_clients += 1;
             system.virt_tx_config.num_clients += 1;
             system.vswitch_config.num_ports += 1;
@@ -706,6 +721,8 @@ pub const Net = struct {
         try data.serialize(allocator, system.virt_tx_config, prefix, "net_virt_tx");
         if (system.maybe_vswitch != null)
             try data.serialize(allocator, system.vswitch_config, prefix, "net_vswitch");
+        if (system.maybe_vswitch_orchestrator != null)
+            try data.serialize(allocator, system.vswitch_orchestrator_config, prefix, "net_vswitch_orchestrator");
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {
